@@ -1,0 +1,11 @@
+{
+    "dataset_path": "./datasets",
+    "val_path": "./dataset/val",
+    "learning_rate": 0.001,
+    "batch_size": 32,
+    "epochs": 20,
+    "scale_factor": 2,
+    "crop_size": 96,
+    "checkpoint_dir": "./checkpoints",
+    "checkpoint_name": "best_model.pth"
+}

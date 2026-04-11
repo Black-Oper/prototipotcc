@@ -74,7 +74,16 @@ def download_datasets():
         print(f"Extraindo {dataset_name}...")
         with zipfile.ZipFile(temp_file, 'r') as zip_ref:
             zip_ref.extractall(dataset_folder)
-        
+
+        # Se o zip criou uma pasta com o mesmo nome dentro da pasta de destino
+        # (ex.: datasets/vimeo_septuplet/vimeo_septuplet/...), achatar para que
+        # o restante do código encontre sequences/ diretamente.
+        nested = dataset_folder / dataset_folder.name
+        if nested.is_dir():
+            for item in nested.iterdir():
+                item.rename(dataset_folder / item.name)
+            nested.rmdir()
+
         temp_file.unlink()
         print(f"✓ {dataset_name} baixado com sucesso!\n")
     

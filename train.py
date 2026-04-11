@@ -9,91 +9,119 @@ import math
 import random
 from pathlib import Path
 from tqdm import tqdm
-from sklearn.model_selection import train_test_split # Útil para dividir a lista de arquivos
+from sklearn.model_selection import train_test_split
 
-# Importações locais (assumindo a estrutura de pastas correta)
-from models.model import ESPCN
+from models import get_model, get_interface
 from utils.config import ConfigManager
 
-# --- Dataset Class for Vimeo Septuplet ---
+def _resolve_vimeo_paths(data_root):
+    """
+    Retorna (sequences_dir, train_list, test_list) para o Vimeo Septuplet,
+    aceitando tanto o layout direto quanto o aninhado que o zip oficial
+    produz (datasets/vimeo_septuplet/vimeo_septuplet/...).
+    """
+    candidates = [
+        os.path.join(data_root, 'vimeo_septuplet'),
+        os.path.join(data_root, 'vimeo_septuplet', 'vimeo_septuplet'),
+    ]
+    for base in candidates:
+        seqs = os.path.join(base, 'sequences')
+        train_list = os.path.join(base, 'sep_trainlist.txt')
+        if os.path.isdir(seqs) and os.path.isfile(train_list):
+            test_list = os.path.join(base, 'sep_testlist.txt')
+            return seqs, train_list, test_list
+    # Nenhum válido: devolve o caminho canônico para log de erro.
+    base = candidates[0]
+    return (os.path.join(base, 'sequences'),
+            os.path.join(base, 'sep_trainlist.txt'),
+            os.path.join(base, 'sep_testlist.txt'))
+
+
+
 class VimeoSeptupletDataset(Dataset):
-    def __init__(self, data_root, list_file, scale_factor=2, crop_size=96, train=True):
+    def __init__(self, data_root, list_file, scale_factor=2, crop_size=96,
+                 seq_len=3, train=True):
         """
+        Retorna subsequências de `seq_len` frames como pares (LR_seq, HR_seq).
+
         data_root: Caminho para a pasta sequences do vimeo_septuplet
         list_file: Caminho para sep_trainlist.txt ou sep_testlist.txt
+        seq_len: Quantidade de frames consecutivos por amostra (max 7)
         """
         self.data_root = data_root
         self.scale_factor = scale_factor
         self.crop_size = crop_size
+        self.seq_len = min(seq_len, 7)
         self.train = train
-        
-        # Ler a lista de sequências
+
         with open(list_file, 'r') as f:
             self.sequences = [line.strip() for line in f.readlines()]
-    
+
     def __len__(self):
         return len(self.sequences)
-    
+
     def __getitem__(self, idx):
         try:
             seq_path = os.path.join(self.data_root, self.sequences[idx])
-            
-            # Escolher um frame aleatório da sequência (im1 a im7) para treino
-            # Para validação, usar sempre o frame central (im4)
-            if self.train:
-                frame_num = random.randint(1, 7)
-            else:
-                frame_num = 4  # Frame central
-            
-            img_path = os.path.join(seq_path, f'im{frame_num}.png')
-            img = Image.open(img_path).convert('RGB')
-            
-            # Validação de tamanho mínimo
-            if img.width < self.crop_size or img.height < self.crop_size:
-                img = img.resize((self.crop_size, self.crop_size), Image.BICUBIC)
 
-            # 1. Crop
-            w, h = img.size
+            max_start = 8 - self.seq_len
             if self.train:
-                # Random Crop para Treino
+                start = random.randint(1, max_start)
+            else:
+                start = max(1, (max_start + 1) // 2)
+
+            frame_indices = list(range(start, start + self.seq_len))
+
+            imgs = []
+            for fi in frame_indices:
+                img_path = os.path.join(seq_path, f'im{fi}.png')
+                img = Image.open(img_path).convert('RGB')
+                imgs.append(img)
+
+            if imgs[0].width < self.crop_size or imgs[0].height < self.crop_size:
+                imgs = [im.resize((self.crop_size, self.crop_size), Image.BICUBIC)
+                        for im in imgs]
+
+            w, h = imgs[0].size
+            if self.train:
                 left = random.randint(0, w - self.crop_size)
                 top = random.randint(0, h - self.crop_size)
-                img = img.crop((left, top, left + self.crop_size, top + self.crop_size))
-                
-                # 2. Augmentation (Apenas Treino)
-                if random.random() < 0.5: img = TF.hflip(img)
-                if random.random() < 0.5: img = TF.vflip(img)
-                rot = random.choice([0, 90, 180, 270])
-                if rot > 0: img = TF.rotate(img, rot)
             else:
-                # Center Crop para Validação
                 left = (w - self.crop_size) // 2
                 top = (h - self.crop_size) // 2
-                img = img.crop((left, top, left + self.crop_size, top + self.crop_size))
 
-            # 3. Preparar LR (Input) e HR (Target)
+            imgs = [im.crop((left, top, left + self.crop_size, top + self.crop_size))
+                    for im in imgs]
+
+            if self.train:
+                hflip = random.random() < 0.5
+                vflip = random.random() < 0.5
+                rot = random.choice([0, 90, 180, 270])
+                if hflip:
+                    imgs = [TF.hflip(im) for im in imgs]
+                if vflip:
+                    imgs = [TF.vflip(im) for im in imgs]
+                if rot > 0:
+                    imgs = [TF.rotate(im, rot) for im in imgs]
+
             lr_size = self.crop_size // self.scale_factor
-            
-            # Downscale para criar a entrada LR artificialmente
-            lr_img = img.resize((lr_size, lr_size), Image.BICUBIC)
-            
-            # Transformar em Tensor e Normalizar [0, 1]
-            lr_tensor = TF.to_tensor(lr_img)
-            hr_tensor = TF.to_tensor(img)
+            lr_tensors = []
+            hr_tensors = []
+            for im in imgs:
+                lr_img = im.resize((lr_size, lr_size), Image.BICUBIC)
+                lr_tensors.append(TF.to_tensor(lr_img))
+                hr_tensors.append(TF.to_tensor(im))
 
-            return lr_tensor, hr_tensor
-            
+            return torch.stack(lr_tensors), torch.stack(hr_tensors)
+
         except Exception as e:
             print(f"Erro ao carregar sequência {self.sequences[idx]}: {e}")
-            # Retorna um tensor zerado em caso de erro
-            return torch.zeros(3, self.crop_size//self.scale_factor, self.crop_size//self.scale_factor), torch.zeros(3, self.crop_size, self.crop_size)
+            lr_size = self.crop_size // self.scale_factor
+            return (torch.zeros(self.seq_len, 3, lr_size, lr_size),
+                    torch.zeros(self.seq_len, 3, self.crop_size, self.crop_size))
 
-# --- Dataset Class ---
 class SRDataset(Dataset):
     def __init__(self, image_files, scale_factor=2, crop_size=96, train=True):
-        """
-        image_files: Lista de caminhos para as imagens
-        """
         self.image_files = image_files
         self.scale_factor = scale_factor
         self.crop_size = crop_size
@@ -105,153 +133,154 @@ class SRDataset(Dataset):
     def __getitem__(self, idx):
         try:
             img = Image.open(self.image_files[idx]).convert('RGB')
-            
-            # Validação de tamanho mínimo
+
             if img.width < self.crop_size or img.height < self.crop_size:
-                # Se a imagem for muito pequena, redimensiona para poder cropar
                 img = img.resize((self.crop_size, self.crop_size), Image.BICUBIC)
 
-            # 1. Crop
             w, h = img.size
             if self.train:
-                # Random Crop para Treino
                 left = random.randint(0, w - self.crop_size)
                 top = random.randint(0, h - self.crop_size)
                 img = img.crop((left, top, left + self.crop_size, top + self.crop_size))
-                
-                # 2. Augmentation (Apenas Treino)
-                if random.random() < 0.5: img = TF.hflip(img)
-                if random.random() < 0.5: img = TF.vflip(img)
+                if random.random() < 0.5:
+                    img = TF.hflip(img)
+                if random.random() < 0.5:
+                    img = TF.vflip(img)
                 rot = random.choice([0, 90, 180, 270])
-                if rot > 0: img = TF.rotate(img, rot)
+                if rot > 0:
+                    img = TF.rotate(img, rot)
             else:
-                # Center Crop para Validação (Consistência de métrica)
-                # Ou usar a imagem full se a GPU aguentar, mas Center Crop é padrão para validar training loops
                 left = (w - self.crop_size) // 2
                 top = (h - self.crop_size) // 2
                 img = img.crop((left, top, left + self.crop_size, top + self.crop_size))
 
-            # 3. Preparar LR (Input) e HR (Target)
             lr_size = self.crop_size // self.scale_factor
-            
-            # Downscale para criar a entrada LR artificialmente
             lr_img = img.resize((lr_size, lr_size), Image.BICUBIC)
-            
-            # Transformar em Tensor e Normalizar [0, 1]
+
             lr_tensor = TF.to_tensor(lr_img)
             hr_tensor = TF.to_tensor(img)
 
-            return lr_tensor, hr_tensor
-            
+            return lr_tensor.unsqueeze(0), hr_tensor.unsqueeze(0)
+
         except Exception as e:
             print(f"Erro ao carregar imagem {self.image_files[idx]}: {e}")
-            # Retorna um tensor zerado em caso de erro para não quebrar o batch
-            return torch.zeros(3, self.crop_size//self.scale_factor, self.crop_size//self.scale_factor), torch.zeros(3, self.crop_size, self.crop_size)
+            lr_size = self.crop_size // self.scale_factor
+            return (torch.zeros(1, 3, lr_size, lr_size),
+                    torch.zeros(1, 3, self.crop_size, self.crop_size))
 
-# --- Utils ---
 def calc_psnr(img1, img2):
-    # Clampar valores para garantir intervalo válido
     img1 = torch.clamp(img1, 0., 1.)
     img2 = torch.clamp(img2, 0., 1.)
     mse = torch.mean((img1 - img2) ** 2)
-    if mse == 0: return 100
+    if mse == 0:
+        return 100
     return 10 * math.log10(1. / mse.item())
 
-# --- Training Loop ---
 def train():
-    # 1. Carregar Configuração
     try:
         ConfigManager.load_config('presets/config.json')
     except Exception as e:
         print(f"Aviso: {e}. Criando config padrão.")
         ConfigManager.new_config({
-            "dataset_path": "./dataset", 
+            "dataset_path": "./datasets",
             "scale_factor": 2,
             "learning_rate": 0.001,
-            "batch_size": 16,
+            "batch_size": 8,
             "epochs": 50,
-            "crop_size": 96
+            "crop_size": 96,
+            "seq_len": 3,
+            "model_type": "LightweightVSR",
+            "model_params": {"hidden_dim": 64, "num_res_blocks": 6},
         })
 
     config = ConfigManager.get_instance()
-    
-    # Parâmetros
+
     lr = config.get('learning_rate', 1e-3)
-    batch_size = config.get('batch_size', 16)
+    batch_size = config.get('batch_size', 8)
     epochs = config.get('epochs', 100)
     scale = config.get('scale_factor', 2)
     crop_size = config.get('crop_size', 96)
-    data_path = config.get('dataset_path', './dataset')
+    seq_len = config.get('seq_len', 3)
+    data_path = config.get('dataset_path', './datasets')
     ckpt_dir = config.get('checkpoint_dir', './checkpoints')
     ckpt_name = config.get('checkpoint_name', 'best_model.pth')
-    
+    model_type = config.get('model_type', 'LightweightVSR')
+    model_params = config.get('model_params', {'hidden_dim': 64, 'num_res_blocks': 6})
+
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"Device: {device} | Scale: x{scale} | Batch: {batch_size}")    # 2. Preparar Dados
-    # Verificar se é dataset vimeo_septuplet
-    vimeo_sequences_path = os.path.join(data_path, 'vimeo_septuplet', 'sequences')
-    vimeo_train_list = os.path.join(data_path, 'vimeo_septuplet', 'sep_trainlist.txt')
-    vimeo_test_list = os.path.join(data_path, 'vimeo_septuplet', 'sep_testlist.txt')
-    
+    print(f"Device: {device} | Modelo: {model_type} | Scale: x{scale} | "
+          f"Batch: {batch_size} | seq_len: {seq_len}")
+    print(f"Parâmetros do modelo: {model_params}")
+
+    vimeo_sequences_path, vimeo_train_list, vimeo_test_list = _resolve_vimeo_paths(data_path)
+
     if os.path.exists(vimeo_sequences_path) and os.path.exists(vimeo_train_list):
-        # Usar dataset Vimeo Septuplet
-        print("Usando dataset Vimeo Septuplet")
-        train_ds = VimeoSeptupletDataset(vimeo_sequences_path, vimeo_train_list, 
-                                         scale_factor=scale, crop_size=crop_size, train=True)
-        
-        # Usar lista de teste se existir, senão dividir a lista de treino
+        print(f"Usando dataset Vimeo Septuplet (VSR temporal) em: {vimeo_sequences_path}")
+        train_ds = VimeoSeptupletDataset(
+            vimeo_sequences_path, vimeo_train_list,
+            scale_factor=scale, crop_size=crop_size, seq_len=seq_len, train=True)
+
         if os.path.exists(vimeo_test_list):
-            val_ds = VimeoSeptupletDataset(vimeo_sequences_path, vimeo_test_list, 
-                                          scale_factor=scale, crop_size=crop_size, train=False)
+            val_ds = VimeoSeptupletDataset(
+                vimeo_sequences_path, vimeo_test_list,
+                scale_factor=scale, crop_size=crop_size, seq_len=seq_len, train=False)
         else:
-            print("Aviso: sep_testlist.txt não encontrado. Usando 10% do treino para validação.")
-            # Dividir manualmente a lista de treino
+            print("Aviso: sep_testlist.txt não encontrado. Usando 10% do treino.")
             with open(vimeo_train_list, 'r') as f:
                 all_seqs = [line.strip() for line in f.readlines()]
-            train_seqs, val_seqs = train_test_split(all_seqs, test_size=0.1, random_state=42)
-            
-            # Criar arquivos temporários
+            train_seqs, val_seqs = train_test_split(all_seqs, test_size=0.1,
+                                                     random_state=42)
             temp_train = os.path.join(data_path, 'vimeo_septuplet', 'temp_train.txt')
             temp_val = os.path.join(data_path, 'vimeo_septuplet', 'temp_val.txt')
-            
             with open(temp_train, 'w') as f:
                 f.write('\n'.join(train_seqs))
             with open(temp_val, 'w') as f:
                 f.write('\n'.join(val_seqs))
-            
-            train_ds = VimeoSeptupletDataset(vimeo_sequences_path, temp_train, 
-                                           scale_factor=scale, crop_size=crop_size, train=True)
-            val_ds = VimeoSeptupletDataset(vimeo_sequences_path, temp_val, 
-                                          scale_factor=scale, crop_size=crop_size, train=False)
+            train_ds = VimeoSeptupletDataset(
+                vimeo_sequences_path, temp_train,
+                scale_factor=scale, crop_size=crop_size, seq_len=seq_len, train=True)
+            val_ds = VimeoSeptupletDataset(
+                vimeo_sequences_path, temp_val,
+                scale_factor=scale, crop_size=crop_size, seq_len=seq_len, train=False)
     else:
-        # Usar dataset genérico (imagens soltas)
-        print("Usando dataset genérico de imagens")
+        print("[AVISO] Vimeo Septuplet não encontrado. Caminhos inspecionados:")
+        print(f"  - sequences: {vimeo_sequences_path}")
+        print(f"  - trainlist: {vimeo_train_list}")
+        print("Caindo para dataset genérico de imagens (modo SISR, sem temporalidade).")
         path_obj = Path(data_path)
-        all_images = list(path_obj.rglob("*.png")) + list(path_obj.rglob("*.jpg")) + list(path_obj.rglob("*.jpeg"))
-        
+        all_images = (list(path_obj.rglob("*.png")) +
+                      list(path_obj.rglob("*.jpg")) +
+                      list(path_obj.rglob("*.jpeg")))
+
         if len(all_images) == 0:
             print("Nenhuma imagem encontrada. Verifique o caminho no config.json")
             return
 
-        # Dividimos a LISTA de arquivos, não o Dataset
-        train_files, val_files = train_test_split(all_images, test_size=0.1, random_state=42)
-          # Criamos Datasets distintos com comportamentos distintos
-        train_ds = SRDataset(train_files, scale_factor=scale, crop_size=crop_size, train=True)
-        val_ds = SRDataset(val_files, scale_factor=scale, crop_size=crop_size, train=False)
+        train_files, val_files = train_test_split(all_images, test_size=0.1,
+                                                   random_state=42)
+        train_ds = SRDataset(train_files, scale_factor=scale,
+                             crop_size=crop_size, train=True)
+        val_ds = SRDataset(val_files, scale_factor=scale,
+                           crop_size=crop_size, train=False)
 
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True)
-    val_loader = DataLoader(val_ds, batch_size=1, shuffle=False, num_workers=2) # Batch 1 para validação é mais preciso para PSNR médio
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True,
+                              num_workers=4, pin_memory=True)
+    val_loader = DataLoader(val_ds, batch_size=1, shuffle=False, num_workers=2)
 
-    # 3. Modelo e Otimizador
-    model = ESPCN(scale_factor=scale, num_frames=1, channels=3).to(device)
+    model = get_model(model_type, scale_factor=scale, channels=3, **model_params).to(device)
+    interface = get_interface(model_type)
+
+    num_params = sum(p.numel() for p in model.parameters())
+    print(f"Parâmetros do modelo: {num_params:,} | Interface: {interface}")
+
     criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=lr)
-    # Scheduler: reduz LR quando o Loss para de cair
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=10, verbose=True)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode='min', factor=0.5, patience=10)
 
     os.makedirs(ckpt_dir, exist_ok=True)
     full_ckpt_path = os.path.join(ckpt_dir, ckpt_name)
 
-    # 4. Resume Checkpoint
     start_epoch = 0
     best_psnr = 0.0
 
@@ -266,45 +295,65 @@ def train():
     else:
         print("Iniciando treino do zero.")
 
-    # 5. Loop Principal
     for epoch in range(start_epoch, epochs):
         model.train()
         epoch_loss = 0
-        
-        with tqdm(total=len(train_loader), desc=f'Epoch {epoch+1}/{epochs}', unit='batch') as pbar:
-            for lr_imgs, hr_imgs in train_loader:
-                lr_imgs, hr_imgs = lr_imgs.to(device), hr_imgs.to(device)
-                
+
+        with tqdm(total=len(train_loader), desc=f'Epoch {epoch+1}/{epochs}',
+                  unit='batch') as pbar:
+            for lr_seq, hr_seq in train_loader:
+                lr_seq = lr_seq.to(device)
+                hr_seq = hr_seq.to(device)
+                T = lr_seq.shape[1]
+
                 optimizer.zero_grad()
-                sr_imgs = model(lr_imgs)
-                
-                loss = criterion(sr_imgs, hr_imgs)
-                loss.backward()
+
+                if interface == "recurrent":
+                    total_loss = 0
+                    state = None
+                    for t in range(T):
+                        sr_frame, state = model(lr_seq[:, t], state)
+                        total_loss = total_loss + criterion(sr_frame, hr_seq[:, t])
+                    total_loss = total_loss / T
+                else:  # sliding_window
+                    sr_frame = model(lr_seq)
+                    total_loss = criterion(sr_frame, hr_seq[:, T // 2])
+
+                total_loss.backward()
                 optimizer.step()
-                
-                epoch_loss += loss.item()
-                pbar.set_postfix({'loss': f'{loss.item():.5f}'})
+
+                epoch_loss += total_loss.item()
+                pbar.set_postfix({'loss': f'{total_loss.item():.5f}'})
                 pbar.update(1)
-        
+
         avg_loss = epoch_loss / len(train_loader)
-        
-        # --- Validação ---
+
         model.eval()
         val_psnr = 0.0
+        val_count = 0
         with torch.no_grad():
-            for lr_v, hr_v in val_loader:
-                lr_v, hr_v = lr_v.to(device), hr_v.to(device)
-                sr_v = model(lr_v)
-                val_psnr += calc_psnr(sr_v, hr_v)
-        
-        avg_psnr = val_psnr / len(val_loader)
-        
-        # O scheduler monitora o Loss de treino (ou você pode mudar para monitorar -avg_psnr)
+            for lr_seq, hr_seq in val_loader:
+                lr_seq = lr_seq.to(device)
+                hr_seq = hr_seq.to(device)
+                T = lr_seq.shape[1]
+
+                if interface == "recurrent":
+                    state = None
+                    for t in range(T):
+                        sr_frame, state = model(lr_seq[:, t], state)
+                        val_psnr += calc_psnr(sr_frame, hr_seq[:, t])
+                        val_count += 1
+                else:  # sliding_window
+                    sr_frame = model(lr_seq)
+                    val_psnr += calc_psnr(sr_frame, hr_seq[:, T // 2])
+                    val_count += 1
+
+        avg_psnr = val_psnr / max(val_count, 1)
         scheduler.step(avg_loss)
 
-        print(f"Epoch {epoch+1} -> Train Loss: {avg_loss:.6f} | Val PSNR: {avg_psnr:.2f} dB")
+        print(f"Epoch {epoch+1} -> Train Loss: {avg_loss:.6f} | "
+              f"Val PSNR: {avg_psnr:.2f} dB")
 
-        # Salvar Melhor Modelo
         if avg_psnr > best_psnr:
             best_psnr = avg_psnr
             torch.save({
@@ -312,9 +361,12 @@ def train():
                 'model': model.state_dict(),
                 'optimizer': optimizer.state_dict(),
                 'psnr': best_psnr,
+                'model_type': model_type,
+                'model_params': model_params,
                 'config': config.get_config()
             }, full_ckpt_path)
-            print(f"✓ Salvo novo melhor modelo! ({best_psnr:.2f} dB)\n")
+            print(f"Salvo novo melhor modelo! ({best_psnr:.2f} dB)\n")
+
 
 if __name__ == '__main__':
     train()

@@ -1,1 +1,16 @@
+# Para habilitar CUDA (Windows/Linux), instale o build correspondente à sua GPU
+# em vez de deixar o pip resolver o padrão (que baixa o wheel CPU-only):
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+# Ajuste cu121 para a versão do CUDA Toolkit suportada pelo seu driver.
+torch
+torchvision
+requests
+tqdm
+opencv-python
+numpy
+mss
+Pillow
+scikit-learn
+scikit-image
+matplotlib
 questionary

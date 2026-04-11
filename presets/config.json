@@ -1,11 +1,16 @@
 {
     "dataset_path": "./datasets",
-    "val_path": "./dataset/val",
-    "learning_rate": 0.001,
-    "batch_size": 32,
-    "epochs": 20,
     "scale_factor": 2,
+    "seq_len": 3,
+    "learning_rate": 0.001,
+    "batch_size": 8,
+    "epochs": 50,
     "crop_size": 96,
+    "model_type": "LightweightVSR",
+    "model_params": {
+        "hidden_dim": 64,
+        "num_res_blocks": 6
+    },
     "checkpoint_dir": "./checkpoints",
     "checkpoint_name": "best_model.pth"
 }

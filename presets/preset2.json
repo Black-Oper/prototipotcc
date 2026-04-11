@@ -1,8 +1,0 @@
-{
-    "learning_rate": 0.001,
-    "batch_size": 4,
-    "epochs": 50,
-    "model_type": "ESPCN",
-    "scale_factor": 2,
-    "dataset_path": "datasets/DIV2K/train_HR"
-}

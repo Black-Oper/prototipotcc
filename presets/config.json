@@ -6,11 +6,10 @@
     "batch_size": 8,
     "epochs": 50,
     "crop_size": 96,
-    "model_type": "LightweightVSR",
+    "model_type": "ShuffleVSR",
     "model_params": {
         "hidden_dim": 64,
         "num_res_blocks": 6
     },
-    "checkpoint_dir": "./checkpoints",
-    "checkpoint_name": "best_model.pth"
+    "checkpoint_dir": "./checkpoints"
 }

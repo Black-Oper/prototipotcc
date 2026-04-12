@@ -277,6 +277,9 @@ def train():
     optimizer = optim.Adam(model.parameters(), lr=lr)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode='min', factor=0.5, patience=10)
+    
+    is_cuda = device.type == 'cuda'
+    scaler = torch.amp.GradScaler('cuda', enabled=is_cuda)
 
     os.makedirs(ckpt_dir, exist_ok=True)
     full_ckpt_path = os.path.join(ckpt_dir, ckpt_name)
@@ -307,24 +310,34 @@ def train():
                 T = lr_seq.shape[1]
 
                 optimizer.zero_grad()
-
-                if interface == "recurrent":
-                    total_loss = 0
-                    state = None
-                    for t in range(T):
-                        sr_frame, state = model(lr_seq[:, t], state)
-                        total_loss = total_loss + criterion(sr_frame, hr_seq[:, t])
-                    total_loss = total_loss / T
-                else:  # sliding_window
-                    sr_frame = model(lr_seq)
-                    total_loss = criterion(sr_frame, hr_seq[:, T // 2])
-
-                total_loss.backward()
-                optimizer.step()
-
+                
+                with torch.autocast(device_type=device.type, dtype=torch.float16):
+                    if interface == "recurrent":
+                        total_loss = 0
+                        state = None
+                        for t in range(T):
+                            if state is not None:
+                                state = state.detach()
+                            
+                            sr_frame, state = model(lr_seq[:, t], state)
+                            total_loss = total_loss + criterion(sr_frame, hr_seq[:, t])
+                        total_loss = total_loss / T
+                    else:
+                        sr_frame = model(lr_seq)
+                        total_loss = criterion(sr_frame, hr_seq[:, T // 2])
+                        
+                if is_cuda:
+                    scaler.scale(total_loss).backward()
+                    scaler.step(optimizer)
+                    scaler.update()
+                else:
+                    total_loss.backward()
+                    optimizer.step()
+                
                 epoch_loss += total_loss.item()
                 pbar.set_postfix({'loss': f'{total_loss.item():.5f}'})
                 pbar.update(1)
+
 
         avg_loss = epoch_loss / len(train_loader)
 

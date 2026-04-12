@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import warnings
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms.functional as TF
@@ -115,10 +116,8 @@ class VimeoSeptupletDataset(Dataset):
             return torch.stack(lr_tensors), torch.stack(hr_tensors)
 
         except Exception as e:
-            print(f"Erro ao carregar sequência {self.sequences[idx]}: {e}")
-            lr_size = self.crop_size // self.scale_factor
-            return (torch.zeros(self.seq_len, 3, lr_size, lr_size),
-                    torch.zeros(self.seq_len, 3, self.crop_size, self.crop_size))
+            warnings.warn(f"Erro ao carregar {self.sequences[idx]}: {e}. Redirecionando.")
+            return self.__getitem__(random.randint(0, len(self) - 1))
 
 class SRDataset(Dataset):
     def __init__(self, image_files, scale_factor=2, crop_size=96, train=True):
@@ -289,9 +288,14 @@ def train():
 
     if os.path.exists(full_ckpt_path):
         print(f"Carregando checkpoint: {full_ckpt_path}")
-        checkpoint = torch.load(full_ckpt_path, map_location=device)
+        # weights_only=False adicionado para limpar o aviso de segurança do PyTorch 2.4+
+        checkpoint = torch.load(full_ckpt_path, map_location=device, weights_only=False)
         model.load_state_dict(checkpoint['model'])
         optimizer.load_state_dict(checkpoint['optimizer'])
+        
+        if 'scaler' in checkpoint and checkpoint['scaler'] is not None and is_cuda:
+            scaler.load_state_dict(checkpoint['scaler'])
+            
         start_epoch = checkpoint['epoch'] + 1
         best_psnr = checkpoint.get('psnr', 0.0)
         print(f"Resumindo da época {start_epoch} com PSNR base: {best_psnr:.2f} dB")
@@ -305,19 +309,19 @@ def train():
         with tqdm(total=len(train_loader), desc=f'Epoch {epoch+1}/{epochs}',
                   unit='batch') as pbar:
             for lr_seq, hr_seq in train_loader:
-                lr_seq = lr_seq.to(device)
-                hr_seq = hr_seq.to(device)
+                lr_seq = lr_seq.to(device, non_blocking=True)
+                hr_seq = hr_seq.to(device, non_blocking=True)
                 T = lr_seq.shape[1]
 
-                optimizer.zero_grad()
+                optimizer.zero_grad(set_to_none=True)
                 
                 with torch.autocast(device_type=device.type, dtype=torch.float16):
                     if interface == "recurrent":
-                        total_loss = 0
+                        total_loss = torch.zeros(1, device=device, dtype=torch.float32)
                         state = None
                         for t in range(T):
                             if state is not None:
-                                state = state.detach()
+                                state = state.float().detach()
                             
                             sr_frame, state = model(lr_seq[:, t], state)
                             total_loss = total_loss + criterion(sr_frame, hr_seq[:, t])
@@ -328,10 +332,13 @@ def train():
                         
                 if is_cuda:
                     scaler.scale(total_loss).backward()
+                    scaler.unscale_(optimizer)
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                     scaler.step(optimizer)
                     scaler.update()
                 else:
                     total_loss.backward()
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                     optimizer.step()
                 
                 epoch_loss += total_loss.item()
@@ -362,7 +369,7 @@ def train():
                     val_count += 1
 
         avg_psnr = val_psnr / max(val_count, 1)
-        scheduler.step(avg_loss)
+        scheduler.step(-avg_psnr)
 
         print(f"Epoch {epoch+1} -> Train Loss: {avg_loss:.6f} | "
               f"Val PSNR: {avg_psnr:.2f} dB")
@@ -373,6 +380,7 @@ def train():
                 'epoch': epoch,
                 'model': model.state_dict(),
                 'optimizer': optimizer.state_dict(),
+                'scaler': scaler.state_dict() if is_cuda else None, # Salva a memória do AMP
                 'psnr': best_psnr,
                 'model_type': model_type,
                 'model_params': model_params,

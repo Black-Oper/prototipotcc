@@ -263,7 +263,9 @@ def train():
                            crop_size=crop_size, train=False)
 
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True,
-                              num_workers=4, pin_memory=True)
+                              num_workers=2, pin_memory=True, persistent_workers=True)
+        
+    
     val_loader = DataLoader(val_ds, batch_size=1, shuffle=False, num_workers=2)
 
     model = get_model(model_type, scale_factor=scale, channels=3, **model_params).to(device)
@@ -317,18 +319,19 @@ def train():
                 
                 with torch.autocast(device_type=device.type, dtype=torch.float16):
                     if interface == "recurrent":
-                        total_loss = torch.zeros(1, device=device, dtype=torch.float32)
+                        sr_frames = []
                         state = None
                         for t in range(T):
                             if state is not None:
-                                state = state.float().detach()
-                            
+                                state = state.float()
                             sr_frame, state = model(lr_seq[:, t], state)
-                            total_loss = total_loss + criterion(sr_frame, hr_seq[:, t])
-                        total_loss = total_loss / T
-                    else:
-                        sr_frame = model(lr_seq)
-                        total_loss = criterion(sr_frame, hr_seq[:, T // 2])
+                            sr_frames.append(sr_frame)
+
+                # Loss em float32, fora do autocast
+                total_loss = torch.zeros(1, device=device)
+                for t, sr_frame in enumerate(sr_frames):
+                    total_loss = total_loss + criterion(sr_frame.float(), hr_seq[:, t])
+                total_loss = total_loss / T
                         
                 if is_cuda:
                     scaler.scale(total_loss).backward()

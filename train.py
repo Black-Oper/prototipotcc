@@ -175,6 +175,40 @@ def calc_psnr(img1, img2):
         return 100
     return 10 * math.log10(1. / mse.item())
 
+
+def calc_temporal_consistency(sr_frames, hr_frames):
+    """
+    Temporal Consistency Error (TCE).
+    Compara as diferenças temporais entre frames SR consecutivos com as
+    diferenças entre frames HR consecutivos. Quanto menor, mais consistente.
+
+    sr_frames: lista de tensores SR (B, C, H, W)
+    hr_frames: lista de tensores HR (B, C, H, W)
+    Retorna: TCE médio (float) — 0.0 = perfeitamente consistente
+    """
+    if len(sr_frames) < 2:
+        return 0.0
+
+    tce_sum = 0.0
+    count = 0
+    for i in range(1, len(sr_frames)):
+        sr_diff = sr_frames[i] - sr_frames[i - 1]
+        hr_diff = hr_frames[i] - hr_frames[i - 1]
+        tce_sum += torch.mean((sr_diff - hr_diff) ** 2).item()
+        count += 1
+
+    return tce_sum / count
+
+
+class CharbonnierLoss(nn.Module):
+    """Charbonnier loss (L1 suavizado) — mais robusto que MSE para SR."""
+    def __init__(self, epsilon=1e-6):
+        super().__init__()
+        self.eps_sq = epsilon ** 2
+
+    def forward(self, pred, target):
+        return torch.mean(torch.sqrt((pred - target) ** 2 + self.eps_sq))
+
 def train():
     try:
         ConfigManager.load_config('presets/config.json')
@@ -263,8 +297,11 @@ def train():
                            crop_size=crop_size, train=False)
 
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True,
-                              num_workers=4, pin_memory=True)
-    val_loader = DataLoader(val_ds, batch_size=1, shuffle=False, num_workers=2)
+                              num_workers=4, pin_memory=True,
+                              persistent_workers=True)
+    val_loader = DataLoader(val_ds, batch_size=1, shuffle=False, num_workers=2,
+                            persistent_workers=True)
+    max_val_samples = config.get('max_val_samples', 500)
 
     model = get_model(model_type, scale_factor=scale, channels=3, **model_params).to(device)
     interface = get_interface(model_type)
@@ -272,10 +309,11 @@ def train():
     num_params = sum(p.numel() for p in model.parameters())
     print(f"Parâmetros do modelo: {num_params:,} | Interface: {interface}")
 
-    criterion = nn.MSELoss()
+    criterion = CharbonnierLoss()
+    temporal_weight = config.get('temporal_loss_weight', 0.1)
     optimizer = optim.Adam(model.parameters(), lr=lr)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='min', factor=0.5, patience=10)
+    scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(
+        optimizer, T_0=20, T_mult=2, eta_min=1e-6)
     
     is_cuda = device.type == 'cuda'
     scaler = torch.amp.GradScaler('cuda', enabled=is_cuda)
@@ -317,15 +355,30 @@ def train():
                 
                 with torch.autocast(device_type=device.type, dtype=torch.float16):
                     if interface == "recurrent":
-                        total_loss = torch.zeros(1, device=device, dtype=torch.float32)
+                        recon_loss = torch.zeros(1, device=device, dtype=torch.float32)
+                        temp_loss = torch.zeros(1, device=device, dtype=torch.float32)
                         state = None
+                        prev_sr = None
+                        prev_hr = None
                         for t in range(T):
                             if state is not None:
                                 state = state.float().detach()
-                            
+
                             sr_frame, state = model(lr_seq[:, t], state)
-                            total_loss = total_loss + criterion(sr_frame, hr_seq[:, t])
-                        total_loss = total_loss / T
+                            recon_loss = recon_loss + criterion(sr_frame, hr_seq[:, t])
+
+                            # Temporal consistency loss
+                            if prev_sr is not None:
+                                sr_diff = sr_frame - prev_sr
+                                hr_diff = hr_seq[:, t] - prev_hr
+                                temp_loss = temp_loss + torch.mean((sr_diff - hr_diff) ** 2)
+
+                            prev_sr = sr_frame.detach()
+                            prev_hr = hr_seq[:, t]
+
+                        recon_loss = recon_loss / T
+                        temp_loss = temp_loss / max(T - 1, 1)
+                        total_loss = recon_loss + temporal_weight * temp_loss
                     else:
                         sr_frame = model(lr_seq)
                         total_loss = criterion(sr_frame, hr_seq[:, T // 2])
@@ -350,29 +403,40 @@ def train():
 
         model.eval()
         val_psnr = 0.0
+        val_tce = 0.0
         val_count = 0
+        val_seq_count = 0
         with torch.no_grad():
-            for lr_seq, hr_seq in val_loader:
+            for val_i, (lr_seq, hr_seq) in enumerate(val_loader):
+                if val_i >= max_val_samples:
+                    break
                 lr_seq = lr_seq.to(device)
                 hr_seq = hr_seq.to(device)
                 T = lr_seq.shape[1]
 
                 if interface == "recurrent":
                     state = None
+                    sr_frames = []
+                    hr_frames = []
                     for t in range(T):
                         sr_frame, state = model(lr_seq[:, t], state)
                         val_psnr += calc_psnr(sr_frame, hr_seq[:, t])
                         val_count += 1
+                        sr_frames.append(sr_frame)
+                        hr_frames.append(hr_seq[:, t])
+                    val_tce += calc_temporal_consistency(sr_frames, hr_frames)
+                    val_seq_count += 1
                 else:  # sliding_window
                     sr_frame = model(lr_seq)
                     val_psnr += calc_psnr(sr_frame, hr_seq[:, T // 2])
                     val_count += 1
 
         avg_psnr = val_psnr / max(val_count, 1)
-        scheduler.step(-avg_psnr)
+        avg_tce = val_tce / max(val_seq_count, 1)
+        scheduler.step(epoch)
 
         print(f"Epoch {epoch+1} -> Train Loss: {avg_loss:.6f} | "
-              f"Val PSNR: {avg_psnr:.2f} dB")
+              f"Val PSNR: {avg_psnr:.2f} dB | TCE: {avg_tce:.6f}")
 
         if avg_psnr > best_psnr:
             best_psnr = avg_psnr
@@ -380,13 +444,14 @@ def train():
                 'epoch': epoch,
                 'model': model.state_dict(),
                 'optimizer': optimizer.state_dict(),
-                'scaler': scaler.state_dict() if is_cuda else None, # Salva a memória do AMP
+                'scaler': scaler.state_dict() if is_cuda else None,
                 'psnr': best_psnr,
+                'tce': avg_tce,
                 'model_type': model_type,
                 'model_params': model_params,
                 'config': config.get_config()
             }, full_ckpt_path)
-            print(f"Salvo novo melhor modelo! ({best_psnr:.2f} dB)\n")
+            print(f"Salvo novo melhor modelo! ({best_psnr:.2f} dB | TCE: {avg_tce:.6f})\n")
 
 
 if __name__ == '__main__':

@@ -413,7 +413,22 @@ def train():
         optimizer, schedulers=[warmup_scheduler, cosine_scheduler],
         milestones=[warmup_epochs])
     
-    scaler = torch.amp.GradScaler('cuda', enabled=is_cuda)
+    # Escolha automática de precisão: BF16 > FP16 > FP32
+    # BF16 tem o mesmo alcance do FP32 (sem overflow), evitando NaN
+    if is_cuda and torch.cuda.is_bf16_supported():
+        amp_dtype = torch.bfloat16
+        use_scaler = False  # BF16 não precisa de GradScaler
+        print("Usando BF16 (bfloat16) — mais estável que FP16.")
+    elif is_cuda:
+        amp_dtype = torch.float16
+        use_scaler = True
+        print("Usando FP16 (float16) com GradScaler.")
+    else:
+        amp_dtype = torch.float32
+        use_scaler = False
+        print("Usando FP32 (CPU).")
+
+    scaler = torch.amp.GradScaler('cuda', enabled=use_scaler)
 
     os.makedirs(ckpt_dir, exist_ok=True)
     ckpt_name = f"{model_type}_best_model.pth"
@@ -458,7 +473,7 @@ def train():
 
                 optimizer.zero_grad(set_to_none=True)
                 
-                with torch.autocast(device_type=device.type, dtype=torch.float16):
+                with torch.autocast(device_type=device.type, dtype=amp_dtype):
                     if interface == "recurrent":
                         recon_loss = torch.zeros(1, device=device, dtype=torch.float32)
                         temp_loss = torch.zeros(1, device=device, dtype=torch.float32)
@@ -494,7 +509,7 @@ def train():
                     pbar.update(1)
                     continue
 
-                if is_cuda:
+                if use_scaler:
                     scaler.scale(total_loss).backward()
                     scaler.unscale_(optimizer)
                     torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=0.5)
@@ -505,8 +520,11 @@ def train():
                     torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=0.5)
                     optimizer.step()
 
-                # Se pesos ficaram NaN após o step, restaura do checkpoint
-                has_nan = any(torch.isnan(p).any() for p in model.parameters())
+                # Verifica NaN nos pesos a cada 100 batches (checagem custosa)
+                if pbar.n % 100 == 0:
+                    has_nan = any(torch.isnan(p).any() for p in model.parameters())
+                else:
+                    has_nan = False
                 if has_nan:
                     if os.path.exists(full_ckpt_path):
                         print("\n[AVISO] NaN detectado nos pesos! Restaurando último checkpoint...")

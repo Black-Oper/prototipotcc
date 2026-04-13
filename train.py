@@ -6,7 +6,7 @@ from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms.functional as TF
 from PIL import Image
 import os
-import io
+
 import math
 import time
 import random
@@ -43,45 +43,20 @@ def _resolve_vimeo_paths(data_root):
 
 def _apply_realistic_degradation(lr_img, train=True):
     """
-    Aplica degradação realista ao frame LR para simular condições reais.
-    Pipeline: bicubic downscale (já feito) → compressão JPEG → ruído gaussiano.
-
-    Baseado em Real-ESRGAN (Wang et al., 2021) — degradação de segunda ordem
-    simplificada para manter o treinamento viável em hardware limitado.
+    Converte a imagem LR (já com downscale bicúbico) para tensor.
+    Sem degradação adicional (JPEG/ruído) para facilitar a convergência.
     """
-    # 1. Compressão JPEG — simula artefatos de streaming/codec
-    if train:
-        quality = random.randint(30, 85)
-    else:
-        quality = 50  # fixo para validação — típico de streaming real
-
-    buf = io.BytesIO()
-    lr_img.save(buf, format='JPEG', quality=quality)
-    buf.seek(0)
-    lr_img = Image.open(buf).convert('RGB')
-
-    # 2. Converte para tensor e adiciona ruído gaussiano
-    lr_tensor = TF.to_tensor(lr_img)
-
-    if train:
-        sigma = random.uniform(3.0, 15.0) / 255.0
-    else:
-        sigma = 8.0 / 255.0  # fixo para validação — ruído de sensor típico
-
-    noise = torch.randn_like(lr_tensor) * sigma
-    lr_tensor = torch.clamp(lr_tensor + noise, 0.0, 1.0)
-
-    return lr_tensor
+    return TF.to_tensor(lr_img)
 
 
 def _benchmark_inference(model, device, scale, interface):
     """
     Mede o tempo médio de inferência em resolução real (960x540 LR → 1920x1080 SR).
-    Pipeline: 720p captura → downscale 540p → SR 2x → 1080p.
+    Pipeline: captura nativa 540p → SR 2x → 1080p.
     Retorna o tempo em milissegundos.
     """
     model.eval()
-    lr_h, lr_w = 540, 960  # resolução LR após downscale de 720p
+    lr_h, lr_w = 540, 960  # resolução LR nativa
     dummy_frame = torch.randn(1, 3, lr_h, lr_w, device=device)
 
     # Warmup
@@ -116,10 +91,15 @@ def _benchmark_inference(model, device, scale, interface):
 
 
 class VimeoSeptupletDataset(Dataset):
-    def __init__(self, data_root, list_file, scale_factor=2, crop_size=96,
+    # Resolução nativa do Vimeo Septuplet (todas as imagens têm esse tamanho)
+    VIMEO_W, VIMEO_H = 448, 256
+
+    def __init__(self, data_root, list_file, scale_factor=2, crop_size=256,
                  seq_len=3, train=True):
         """
         Retorna subsequências de `seq_len` frames como pares (LR_seq, HR_seq).
+        Usa a imagem inteira (448×256) sem crop — o modelo vê todo o contexto
+        espacial, eliminando o gap entre treino e inferência em resolução real.
 
         data_root: Caminho para a pasta sequences do vimeo_septuplet
         list_file: Caminho para sep_trainlist.txt ou sep_testlist.txt
@@ -127,9 +107,14 @@ class VimeoSeptupletDataset(Dataset):
         """
         self.data_root = data_root
         self.scale_factor = scale_factor
-        self.crop_size = crop_size
         self.seq_len = min(seq_len, 7)
         self.train = train
+
+        # HR = resolução nativa do Vimeo, arredondada para ser divisível pelo scale
+        self.hr_w = (self.VIMEO_W // scale_factor) * scale_factor  # 448
+        self.hr_h = (self.VIMEO_H // scale_factor) * scale_factor  # 256
+        self.lr_w = self.hr_w // scale_factor  # 224
+        self.lr_h = self.hr_h // scale_factor  # 128
 
         with open(list_file, 'r') as f:
             self.sequences = [line.strip() for line in f.readlines()]
@@ -153,39 +138,22 @@ class VimeoSeptupletDataset(Dataset):
             for fi in frame_indices:
                 img_path = os.path.join(seq_path, f'im{fi}.png')
                 img = Image.open(img_path).convert('RGB')
+                # Garante tamanho exato (todas do Vimeo já são 448×256)
+                if img.size != (self.hr_w, self.hr_h):
+                    img = img.resize((self.hr_w, self.hr_h), Image.BICUBIC)
                 imgs.append(img)
 
-            if imgs[0].width < self.crop_size or imgs[0].height < self.crop_size:
-                imgs = [im.resize((self.crop_size, self.crop_size), Image.BICUBIC)
-                        for im in imgs]
-
-            w, h = imgs[0].size
+            # Augmentação geométrica (sem rotação 90/270 pois é retangular)
             if self.train:
-                left = random.randint(0, w - self.crop_size)
-                top = random.randint(0, h - self.crop_size)
-            else:
-                left = (w - self.crop_size) // 2
-                top = (h - self.crop_size) // 2
-
-            imgs = [im.crop((left, top, left + self.crop_size, top + self.crop_size))
-                    for im in imgs]
-
-            if self.train:
-                hflip = random.random() < 0.5
-                vflip = random.random() < 0.5
-                rot = random.choice([0, 90, 180, 270])
-                if hflip:
+                if random.random() < 0.5:
                     imgs = [TF.hflip(im) for im in imgs]
-                if vflip:
+                if random.random() < 0.5:
                     imgs = [TF.vflip(im) for im in imgs]
-                if rot > 0:
-                    imgs = [TF.rotate(im, rot) for im in imgs]
 
-            lr_size = self.crop_size // self.scale_factor
             lr_tensors = []
             hr_tensors = []
             for im in imgs:
-                lr_img = im.resize((lr_size, lr_size), Image.BICUBIC)
+                lr_img = im.resize((self.lr_w, self.lr_h), Image.BICUBIC)
                 lr_tensors.append(_apply_realistic_degradation(lr_img, train=self.train))
                 hr_tensors.append(TF.to_tensor(im))
 
@@ -304,17 +272,6 @@ def train():
             ConfigManager.load_config('presets/config.json')
         except Exception as e:
             print(f"Aviso: {e}. Criando config padrão.")
-            ConfigManager.new_config({
-                "dataset_path": "./datasets",
-                "scale_factor": 2,
-                "learning_rate": 0.001,
-                "batch_size": 8,
-                "epochs": 50,
-                "crop_size": 96,
-                "seq_len": 3,
-                "model_type": "LightweightVSR",
-                "model_params": {"hidden_dim": 64, "num_res_blocks": 6},
-            })
 
     config = ConfigManager.get_instance()
 

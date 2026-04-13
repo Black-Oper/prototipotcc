@@ -2,11 +2,11 @@
     "dataset_path": "./datasets",
     "scale_factor": 2,
     "seq_len": 3,
-    "learning_rate": 0.001,
-    "batch_size": 8,
+    "learning_rate": 0.0002,
+    "batch_size": 4,
     "epochs": 50,
-    "crop_size": 96,
-    "model_type": "ShuffleVSR",
+    "crop_size": 256,
+    "model_type": "RTDVSR",
     "model_params": {
         "hidden_dim": 64,
         "num_res_blocks": 6

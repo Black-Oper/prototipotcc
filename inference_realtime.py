@@ -12,7 +12,7 @@ from utils.config import ConfigManager
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Resolução LR fixa — 720p captura → 540p LR → 1080p SR (x2)
+# Resolução LR fixa — captura nativa 540p → 1080p SR (x2)
 LR_SIZE = (960, 540)  # (width, height)
 
 
@@ -216,8 +216,8 @@ def run_realtime():
         if not cap.isOpened():
             print("Erro: Webcam não encontrada.")
             return
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 960)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 540)
         source_label = "Webcam"
 
     elif source == "video":

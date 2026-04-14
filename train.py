@@ -434,6 +434,7 @@ def train():
                     if interface == "recurrent":
                         recon_loss = torch.zeros(1, device=device, dtype=torch.float32)
                         temp_loss = torch.zeros(1, device=device, dtype=torch.float32)
+                        mask_loss = torch.zeros(1, device=device, dtype=torch.float32)
                         state = None
                         prev_sr = None
                         prev_hr = None
@@ -442,6 +443,10 @@ def train():
 
                             sr_frame, state = model(lr_seq[:, t], state)
                             recon_loss = recon_loss + criterion(sr_frame, hr_seq[:, t])
+
+                            # Mask sparsity loss (MaskedRecurrentVSR)
+                            if hasattr(model, 'get_mask_loss'):
+                                mask_loss = mask_loss + model.get_mask_loss()
 
                             # Temporal consistency loss
                             if prev_sr is not None:
@@ -454,7 +459,9 @@ def train():
 
                         recon_loss = recon_loss / T
                         temp_loss = temp_loss / max(T - 1, 1)
-                        total_loss = recon_loss + temporal_weight * temp_loss
+                        mask_loss = mask_loss / T
+                        mask_weight = config.get('mask_loss_weight', 0.05)
+                        total_loss = recon_loss + temporal_weight * temp_loss + mask_weight * mask_loss
                     else:
                         sr_frame = model(lr_seq)
                         total_loss = criterion(sr_frame, hr_seq[:, T // 2])

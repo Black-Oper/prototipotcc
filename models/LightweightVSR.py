@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from .registry import register_model
 
@@ -182,8 +183,11 @@ class LightweightVSR(nn.Module):
         # 4. Refinamento com skip connection global
         refined = self.refine(fused) + feat
 
-        # 5. Upsampling sub-pixel
-        sr = self.upsample(refined)
+        # 5. Upsampling sub-pixel + skip bicúbico
+        residual = self.upsample(refined)
+        base = F.interpolate(x, scale_factor=self.scale_factor,
+                             mode='bicubic', align_corners=False)
+        sr = residual + base
 
         return sr, refined  # refined vira prev_state do próximo frame
 

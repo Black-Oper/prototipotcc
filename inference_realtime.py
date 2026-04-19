@@ -128,6 +128,7 @@ def _select_video_file():
     for ext in video_exts:
         video_files.extend(glob.glob(ext))
         video_files.extend(glob.glob(os.path.join('data', '**', ext), recursive=True))
+        video_files.extend(glob.glob(os.path.join('videos', '**', ext), recursive=True))
 
     if not video_files:
         path = questionary.text(
@@ -135,7 +136,7 @@ def _select_video_file():
         ).ask()
         return path
 
-    choices = [questionary.Choice(title=f, value=f) for f in sorted(set(video_files))]
+    choices = [questionary.Choice(title=os.path.basename(f), value=f) for f in sorted(set(video_files))]
     choices.append(questionary.Choice(title="Digitar caminho manualmente", value="__manual__"))
 
     escolha = questionary.select("Escolha um vídeo:", choices=choices).ask()

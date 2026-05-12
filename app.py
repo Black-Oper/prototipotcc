@@ -74,11 +74,12 @@ def treinar_modelo():
 
 def testar_treinamento():
     from utils.config import ConfigManager
-    try:
-        ConfigManager.load_config('presets/config.json')
-    except Exception:
-        pass
     config = ConfigManager.get_instance()
+    if not config.get_config():
+        try:
+            ConfigManager.load_config('presets/config.json')
+        except Exception:
+            pass
     epochs_originais = config.get('epochs', 50)
     config.get_config()['epochs'] = 3
     print("Modo de teste: treinando por 3 épocas...\n")

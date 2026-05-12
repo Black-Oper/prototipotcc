@@ -19,6 +19,8 @@ Interfaces suportadas:
                      Recebe janela de T frames, retorna SR do frame central.
 """
 
+import inspect
+
 MODEL_REGISTRY: dict = {}
 
 
@@ -35,11 +37,19 @@ def register_model(name: str, interface: str = "recurrent"):
 
 
 def get_model(name: str, **kwargs):
-    """Instancia um modelo pelo nome, repassando kwargs ao construtor."""
+    """Instancia um modelo pelo nome, repassando apenas kwargs aceitos pelo construtor."""
     if name not in MODEL_REGISTRY:
         available = list(MODEL_REGISTRY.keys())
         raise ValueError(f"Modelo '{name}' não encontrado. Disponíveis: {available}")
-    return MODEL_REGISTRY[name]["class"](**kwargs)
+    cls = MODEL_REGISTRY[name]["class"]
+    sig = inspect.signature(cls.__init__)
+    params = sig.parameters
+    if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()):
+        filtered = kwargs
+    else:
+        valid_keys = {k for k, v in params.items() if k != 'self'}
+        filtered = {k: v for k, v in kwargs.items() if k in valid_keys}
+    return cls(**filtered)
 
 
 def get_interface(name: str) -> str:

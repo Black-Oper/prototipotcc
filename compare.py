@@ -39,6 +39,22 @@ def _calc_ssim(img1_np: np.ndarray, img2_np: np.ndarray):
         return None
 
 
+def _calc_temporal_consistency(sr_frames: list, hr_frames: list) -> float:
+    """
+    Temporal Consistency Error (TCE).
+    Mede a diferença entre transições temporais SR e HR.
+    Quanto menor, mais temporalmente coerente.
+    """
+    if len(sr_frames) < 2:
+        return 0.0
+    tce_sum = 0.0
+    for i in range(1, len(sr_frames)):
+        sr_diff = sr_frames[i] - sr_frames[i - 1]
+        hr_diff = hr_frames[i] - hr_frames[i - 1]
+        tce_sum += torch.mean((sr_diff - hr_diff) ** 2).item()
+    return tce_sum / (len(sr_frames) - 1)
+
+
 # ---------------------------------------------------------------------------
 # Carregamento de modelo via registry
 # ---------------------------------------------------------------------------
@@ -83,19 +99,26 @@ def _load_checkpoint(path: str, device: torch.device):
 # Inferência
 # ---------------------------------------------------------------------------
 def _run_inference(model, interface: str, lr_seq: torch.Tensor,
-                   device: torch.device) -> torch.Tensor:
-    """Roda inferência e retorna SR do frame central."""
+                   device: torch.device,
+                   return_all_frames: bool = False) -> torch.Tensor:
+    """
+    Roda inferência.
+    Se return_all_frames=True, retorna lista de todos os frames SR.
+    Caso contrário, retorna apenas o último frame.
+    """
     lr_seq = lr_seq.to(device)
     T = lr_seq.shape[1]
     with torch.no_grad():
         if interface == "recurrent":
             state = None
-            sr = None
+            sr_frames = []
             for t in range(T):
                 sr, state = model(lr_seq[:, t], state)
-            return sr  # último frame (recorrente acumula contexto)
+                sr_frames.append(sr)
+            return sr_frames if return_all_frames else sr_frames[-1]
         else:  # sliding_window
-            return model(lr_seq)  # frame central
+            sr = model(lr_seq)
+            return [sr] if return_all_frames else sr
 
 
 # ---------------------------------------------------------------------------
@@ -125,7 +148,8 @@ def _select_checkpoints(ckpt_dir: str) -> list:
 def _evaluate(models_info: list, val_loader, device: torch.device,
               seq_len: int, max_samples: int = 200) -> dict:
     results = {
-        info["label"]: {"psnr": 0.0, "ssim": 0.0, "ssim_count": 0, "count": 0}
+        info["label"]: {"psnr": 0.0, "ssim": 0.0, "ssim_count": 0,
+                         "tce": 0.0, "tce_count": 0, "count": 0}
         for info in models_info
     }
 
@@ -136,7 +160,9 @@ def _evaluate(models_info: list, val_loader, device: torch.device,
         hr_center = hr_seq[:, seq_len // 2].to(device)
 
         for info in models_info:
-            sr = _run_inference(info["model"], info["interface"], lr_seq, device)
+            sr_all = _run_inference(info["model"], info["interface"],
+                                   lr_seq, device, return_all_frames=True)
+            sr = sr_all[-1]  # último frame para PSNR/SSIM
             psnr = _calc_psnr(sr, hr_center)
 
             sr_np = sr.squeeze(0).permute(1, 2, 0).cpu().numpy().clip(0, 1)
@@ -150,6 +176,13 @@ def _evaluate(models_info: list, val_loader, device: torch.device,
                 entry["ssim"] += ssim_val
                 entry["ssim_count"] += 1
 
+            # Temporal Consistency Error
+            if len(sr_all) >= 2:
+                hr_frames = [hr_seq[:, t].to(device) for t in range(hr_seq.shape[1])]
+                tce = _calc_temporal_consistency(sr_all, hr_frames)
+                entry["tce"] += tce
+                entry["tce_count"] += 1
+
         if (i + 1) % 50 == 0:
             print(f"  {i + 1}/{min(max_samples, len(val_loader))} amostras avaliadas...")
 
@@ -158,11 +191,18 @@ def _evaluate(models_info: list, val_loader, device: torch.device,
 
 def _print_table(results: dict):
     has_ssim = any(v["ssim_count"] > 0 for v in results.values())
-    width = 70 if has_ssim else 55
+    has_tce = any(v["tce_count"] > 0 for v in results.values())
+    width = 55
+    if has_ssim:
+        width += 15
+    if has_tce:
+        width += 15
     print("\n" + "=" * width)
     header = f"{'Modelo':<40} {'PSNR (dB)':>12}"
     if has_ssim:
         header += f"  {'SSIM':>8}"
+    if has_tce:
+        header += f"  {'TCE':>10}"
     print(header)
     print("-" * width)
     for label, res in results.items():
@@ -172,6 +212,9 @@ def _print_table(results: dict):
         if has_ssim:
             ssim_str = f"{res['ssim'] / res['ssim_count']:.4f}" if res["ssim_count"] > 0 else "  N/A"
             row += f"  {ssim_str:>8}"
+        if has_tce:
+            tce_str = f"{res['tce'] / res['tce_count']:.6f}" if res["tce_count"] > 0 else "  N/A"
+            row += f"  {tce_str:>10}"
         print(row)
     print("=" * width)
 

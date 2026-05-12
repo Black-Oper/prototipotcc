@@ -6,7 +6,9 @@ from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms.functional as TF
 from PIL import Image
 import os
+
 import math
+import time
 import random
 from pathlib import Path
 from tqdm import tqdm
@@ -39,11 +41,65 @@ def _resolve_vimeo_paths(data_root):
 
 
 
+def _apply_realistic_degradation(lr_img, train=True):
+    """
+    Converte a imagem LR (já com downscale bicúbico) para tensor.
+    Sem degradação adicional (JPEG/ruído) para facilitar a convergência.
+    """
+    return TF.to_tensor(lr_img)
+
+
+def _benchmark_inference(model, device, scale, interface):
+    """
+    Mede o tempo médio de inferência em resolução real (960x540 LR → 1920x1080 SR).
+    Pipeline: captura nativa 540p → SR 2x → 1080p.
+    Retorna o tempo em milissegundos.
+    """
+    model.eval()
+    lr_h, lr_w = 540, 960  # resolução LR nativa
+    dummy_frame = torch.randn(1, 3, lr_h, lr_w, device=device)
+
+    # Warmup
+    with torch.no_grad():
+        for _ in range(5):
+            if interface == "recurrent":
+                model(dummy_frame, None)
+            else:
+                model(dummy_frame.unsqueeze(1))
+
+    if device.type == 'cuda':
+        torch.cuda.synchronize()
+
+    # Medição
+    times = []
+    with torch.no_grad():
+        for _ in range(20):
+            if device.type == 'cuda':
+                torch.cuda.synchronize()
+            t0 = time.perf_counter()
+
+            if interface == "recurrent":
+                model(dummy_frame, None)
+            else:
+                model(dummy_frame.unsqueeze(1))
+
+            if device.type == 'cuda':
+                torch.cuda.synchronize()
+            times.append((time.perf_counter() - t0) * 1000)
+
+    return sum(times) / len(times)
+
+
 class VimeoSeptupletDataset(Dataset):
-    def __init__(self, data_root, list_file, scale_factor=2, crop_size=96,
+    # Resolução nativa do Vimeo Septuplet (todas as imagens têm esse tamanho)
+    VIMEO_W, VIMEO_H = 448, 256
+
+    def __init__(self, data_root, list_file, scale_factor=2, crop_size=256,
                  seq_len=3, train=True):
         """
         Retorna subsequências de `seq_len` frames como pares (LR_seq, HR_seq).
+        Usa a imagem inteira (448×256) sem crop — o modelo vê todo o contexto
+        espacial, eliminando o gap entre treino e inferência em resolução real.
 
         data_root: Caminho para a pasta sequences do vimeo_septuplet
         list_file: Caminho para sep_trainlist.txt ou sep_testlist.txt
@@ -51,9 +107,14 @@ class VimeoSeptupletDataset(Dataset):
         """
         self.data_root = data_root
         self.scale_factor = scale_factor
-        self.crop_size = crop_size
         self.seq_len = min(seq_len, 7)
         self.train = train
+
+        # HR = resolução nativa do Vimeo, arredondada para ser divisível pelo scale
+        self.hr_w = (self.VIMEO_W // scale_factor) * scale_factor  # 448
+        self.hr_h = (self.VIMEO_H // scale_factor) * scale_factor  # 256
+        self.lr_w = self.hr_w // scale_factor  # 224
+        self.lr_h = self.hr_h // scale_factor  # 128
 
         with open(list_file, 'r') as f:
             self.sequences = [line.strip() for line in f.readlines()]
@@ -77,40 +138,23 @@ class VimeoSeptupletDataset(Dataset):
             for fi in frame_indices:
                 img_path = os.path.join(seq_path, f'im{fi}.png')
                 img = Image.open(img_path).convert('RGB')
+                # Garante tamanho exato (todas do Vimeo já são 448×256)
+                if img.size != (self.hr_w, self.hr_h):
+                    img = img.resize((self.hr_w, self.hr_h), Image.BICUBIC)
                 imgs.append(img)
 
-            if imgs[0].width < self.crop_size or imgs[0].height < self.crop_size:
-                imgs = [im.resize((self.crop_size, self.crop_size), Image.BICUBIC)
-                        for im in imgs]
-
-            w, h = imgs[0].size
+            # Augmentação geométrica (sem rotação 90/270 pois é retangular)
             if self.train:
-                left = random.randint(0, w - self.crop_size)
-                top = random.randint(0, h - self.crop_size)
-            else:
-                left = (w - self.crop_size) // 2
-                top = (h - self.crop_size) // 2
-
-            imgs = [im.crop((left, top, left + self.crop_size, top + self.crop_size))
-                    for im in imgs]
-
-            if self.train:
-                hflip = random.random() < 0.5
-                vflip = random.random() < 0.5
-                rot = random.choice([0, 90, 180, 270])
-                if hflip:
+                if random.random() < 0.5:
                     imgs = [TF.hflip(im) for im in imgs]
-                if vflip:
+                if random.random() < 0.5:
                     imgs = [TF.vflip(im) for im in imgs]
-                if rot > 0:
-                    imgs = [TF.rotate(im, rot) for im in imgs]
 
-            lr_size = self.crop_size // self.scale_factor
             lr_tensors = []
             hr_tensors = []
             for im in imgs:
-                lr_img = im.resize((lr_size, lr_size), Image.BICUBIC)
-                lr_tensors.append(TF.to_tensor(lr_img))
+                lr_img = im.resize((self.lr_w, self.lr_h), Image.BICUBIC)
+                lr_tensors.append(_apply_realistic_degradation(lr_img, train=self.train))
                 hr_tensors.append(TF.to_tensor(im))
 
             return torch.stack(lr_tensors), torch.stack(hr_tensors)
@@ -156,7 +200,7 @@ class SRDataset(Dataset):
             lr_size = self.crop_size // self.scale_factor
             lr_img = img.resize((lr_size, lr_size), Image.BICUBIC)
 
-            lr_tensor = TF.to_tensor(lr_img)
+            lr_tensor = _apply_realistic_degradation(lr_img, train=self.train)
             hr_tensor = TF.to_tensor(img)
 
             return lr_tensor.unsqueeze(0), hr_tensor.unsqueeze(0)
@@ -175,22 +219,59 @@ def calc_psnr(img1, img2):
         return 100
     return 10 * math.log10(1. / mse.item())
 
+
+def calc_temporal_consistency(sr_frames, hr_frames):
+    """
+    Temporal Consistency Error (TCE).
+    Compara as diferenças temporais entre frames SR consecutivos com as
+    diferenças entre frames HR consecutivos. Quanto menor, mais consistente.
+
+    sr_frames: lista de tensores SR (B, C, H, W)
+    hr_frames: lista de tensores HR (B, C, H, W)
+    Retorna: TCE médio (float) — 0.0 = perfeitamente consistente
+    """
+    if len(sr_frames) < 2:
+        return 0.0
+
+    tce_sum = 0.0
+    count = 0
+    for i in range(1, len(sr_frames)):
+        sr_diff = sr_frames[i] - sr_frames[i - 1]
+        hr_diff = hr_frames[i] - hr_frames[i - 1]
+        tce_sum += torch.mean((sr_diff - hr_diff) ** 2).item()
+        count += 1
+
+    return tce_sum / count
+
+
+def _detach_state(state):
+    """Desanexa o estado recorrente do grafo computacional.
+    Suporta tensor único, tupla/lista de tensores, ou None."""
+    if state is None:
+        return None
+    if isinstance(state, torch.Tensor):
+        return state.float().detach()
+    if isinstance(state, (tuple, list)):
+        return type(state)(s.float().detach() for s in state)
+    return state
+
+
+class CharbonnierLoss(nn.Module):
+    """Charbonnier loss (L1 suavizado) — mais robusto que MSE para SR."""
+    def __init__(self, epsilon=1e-6):
+        super().__init__()
+        self.eps_sq = epsilon ** 2
+
+    def forward(self, pred, target):
+        return torch.mean(torch.sqrt((pred - target) ** 2 + self.eps_sq))
+
 def train():
-    try:
-        ConfigManager.load_config('presets/config.json')
-    except Exception as e:
-        print(f"Aviso: {e}. Criando config padrão.")
-        ConfigManager.new_config({
-            "dataset_path": "./datasets",
-            "scale_factor": 2,
-            "learning_rate": 0.001,
-            "batch_size": 8,
-            "epochs": 50,
-            "crop_size": 96,
-            "seq_len": 3,
-            "model_type": "LightweightVSR",
-            "model_params": {"hidden_dim": 64, "num_res_blocks": 6},
-        })
+    config = ConfigManager.get_instance()
+    if not config.get_config():
+        try:
+            ConfigManager.load_config('presets/config.json')
+        except Exception as e:
+            print(f"Aviso: {e}. Criando config padrão.")
 
     config = ConfigManager.get_instance()
 
@@ -202,11 +283,11 @@ def train():
     seq_len = config.get('seq_len', 3)
     data_path = config.get('dataset_path', './datasets')
     ckpt_dir = config.get('checkpoint_dir', './checkpoints')
-    ckpt_name = config.get('checkpoint_name', 'best_model.pth')
     model_type = config.get('model_type', 'LightweightVSR')
     model_params = config.get('model_params', {'hidden_dim': 64, 'num_res_blocks': 6})
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    is_cuda = device.type == 'cuda'
     print(f"Device: {device} | Modelo: {model_type} | Scale: x{scale} | "
           f"Batch: {batch_size} | seq_len: {seq_len}")
     print(f"Parâmetros do modelo: {model_params}")
@@ -263,10 +344,11 @@ def train():
                            crop_size=crop_size, train=False)
 
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True,
-                              num_workers=2, pin_memory=True, persistent_workers=True)
-        
-    
-    val_loader = DataLoader(val_ds, batch_size=1, shuffle=False, num_workers=2)
+                              num_workers=4, pin_memory=is_cuda,
+                              persistent_workers=True)
+    val_loader = DataLoader(val_ds, batch_size=1, shuffle=False, num_workers=2,
+                            persistent_workers=True)
+    max_val_samples = config.get('max_val_samples', 500)
 
     model = get_model(model_type, scale_factor=scale, channels=3, **model_params).to(device)
     interface = get_interface(model_type)
@@ -274,16 +356,47 @@ def train():
     num_params = sum(p.numel() for p in model.parameters())
     print(f"Parâmetros do modelo: {num_params:,} | Interface: {interface}")
 
-    criterion = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters(), lr=lr)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='min', factor=0.5, patience=10)
+    criterion = CharbonnierLoss()
+    temporal_weight = config.get('temporal_loss_weight', 0.1)
+    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
+
+    # Warmup linear de 1 época + cosine annealing — evita explosão de gradientes
+    warmup_epochs = 1
+    warmup_scheduler = optim.lr_scheduler.LinearLR(
+        optimizer, start_factor=0.01, end_factor=1.0, total_iters=warmup_epochs)
+    cosine_scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(
+        optimizer, T_0=20, T_mult=2, eta_min=1e-6)
+    scheduler = optim.lr_scheduler.SequentialLR(
+        optimizer, schedulers=[warmup_scheduler, cosine_scheduler],
+        milestones=[warmup_epochs])
     
-    is_cuda = device.type == 'cuda'
-    scaler = torch.amp.GradScaler('cuda', enabled=is_cuda)
+    # Escolha automática de precisão: BF16 > FP16 > FP32
+    # BF16 tem o mesmo alcance do FP32 (sem overflow), evitando NaN
+    if is_cuda and torch.cuda.is_bf16_supported():
+        amp_dtype = torch.bfloat16
+        use_scaler = False  # BF16 não precisa de GradScaler
+        print("Usando BF16 (bfloat16) — mais estável que FP16.")
+    elif is_cuda:
+        amp_dtype = torch.float16
+        use_scaler = True
+        print("Usando FP16 (float16) com GradScaler.")
+    else:
+        amp_dtype = torch.float32
+        use_scaler = False
+        print("Usando FP32 (CPU).")
+
+    scaler = torch.amp.GradScaler('cuda', enabled=use_scaler)
 
     os.makedirs(ckpt_dir, exist_ok=True)
+    ckpt_name = f"{model_type}_best_model.pth"
     full_ckpt_path = os.path.join(ckpt_dir, ckpt_name)
+
+    # Early stopping: para quando PSNR >= 27 dB e inferência <= 16 ms,
+    # ou quando PSNR não melhora por `patience` épocas consecutivas.
+    target_psnr = config.get('target_psnr', 27.0)
+    target_inference_ms = config.get('target_inference_ms', 16.0)
+    patience = config.get('early_stopping_patience', 10)
+    epochs_without_improvement = 0
 
     start_epoch = 0
     best_psnr = 0.0
@@ -302,7 +415,7 @@ def train():
         best_psnr = checkpoint.get('psnr', 0.0)
         print(f"Resumindo da época {start_epoch} com PSNR base: {best_psnr:.2f} dB")
     else:
-        print("Iniciando treino do zero.")
+        print(f"Nenhum checkpoint encontrado para '{model_type}' ({ckpt_name}). Iniciando treino do zero.")
 
     for epoch in range(start_epoch, epochs):
         model.train()
@@ -317,33 +430,77 @@ def train():
 
                 optimizer.zero_grad(set_to_none=True)
                 
-                with torch.autocast(device_type=device.type, dtype=torch.float16):
+                with torch.autocast(device_type=device.type, dtype=amp_dtype):
                     if interface == "recurrent":
-                        sr_frames = []
+                        recon_loss = torch.zeros(1, device=device, dtype=torch.float32)
+                        temp_loss = torch.zeros(1, device=device, dtype=torch.float32)
+                        mask_loss = torch.zeros(1, device=device, dtype=torch.float32)
                         state = None
+                        prev_sr = None
+                        prev_hr = None
                         for t in range(T):
-                            if state is not None:
-                                state = state.float()
-                            sr_frame, state = model(lr_seq[:, t], state)
-                            sr_frames.append(sr_frame)
+                            state = _detach_state(state)
 
-                # Loss em float32, fora do autocast
-                total_loss = torch.zeros(1, device=device)
-                for t, sr_frame in enumerate(sr_frames):
-                    total_loss = total_loss + criterion(sr_frame.float(), hr_seq[:, t])
-                total_loss = total_loss / T
+                            sr_frame, state = model(lr_seq[:, t], state)
+                            recon_loss = recon_loss + criterion(sr_frame, hr_seq[:, t])
+
+                            # Mask sparsity loss (MaskedRecurrentVSR)
+                            if hasattr(model, 'get_mask_loss'):
+                                mask_loss = mask_loss + model.get_mask_loss()
+
+                            # Temporal consistency loss
+                            if prev_sr is not None:
+                                sr_diff = sr_frame - prev_sr
+                                hr_diff = hr_seq[:, t] - prev_hr
+                                temp_loss = temp_loss + torch.mean((sr_diff - hr_diff) ** 2)
+
+                            prev_sr = sr_frame.detach()
+                            prev_hr = hr_seq[:, t]
+
+                        recon_loss = recon_loss / T
+                        temp_loss = temp_loss / max(T - 1, 1)
+                        mask_loss = mask_loss / T
+                        mask_weight = config.get('mask_loss_weight', 0.05)
+                        total_loss = recon_loss + temporal_weight * temp_loss + mask_weight * mask_loss
+                    else:
+                        sr_frame = model(lr_seq)
+                        total_loss = criterion(sr_frame, hr_seq[:, T // 2])
                         
-                if is_cuda:
+                # Proteção contra NaN — pula o batch se loss explodir
+                if torch.isnan(total_loss) or torch.isinf(total_loss):
+                    optimizer.zero_grad(set_to_none=True)
+                    pbar.set_postfix({'loss': 'NaN (skip)'})
+                    pbar.update(1)
+                    continue
+
+                if use_scaler:
                     scaler.scale(total_loss).backward()
                     scaler.unscale_(optimizer)
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=0.5)
                     scaler.step(optimizer)
                     scaler.update()
                 else:
                     total_loss.backward()
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=0.5)
                     optimizer.step()
-                
+
+                # Verifica NaN nos pesos a cada 100 batches (checagem custosa)
+                if pbar.n % 100 == 0:
+                    has_nan = any(torch.isnan(p).any() for p in model.parameters())
+                else:
+                    has_nan = False
+                if has_nan:
+                    if os.path.exists(full_ckpt_path):
+                        print("\n[AVISO] NaN detectado nos pesos! Restaurando último checkpoint...")
+                        ckpt = torch.load(full_ckpt_path, map_location=device, weights_only=False)
+                        model.load_state_dict(ckpt['model'])
+                        optimizer.load_state_dict(ckpt['optimizer'])
+                    else:
+                        print("\n[AVISO] NaN detectado nos pesos sem checkpoint para restaurar!")
+                    pbar.set_postfix({'loss': 'NaN (restored)'})
+                    pbar.update(1)
+                    continue
+
                 epoch_loss += total_loss.item()
                 pbar.set_postfix({'loss': f'{total_loss.item():.5f}'})
                 pbar.update(1)
@@ -353,43 +510,82 @@ def train():
 
         model.eval()
         val_psnr = 0.0
+        val_tce = 0.0
         val_count = 0
+        val_seq_count = 0
         with torch.no_grad():
-            for lr_seq, hr_seq in val_loader:
+            for val_i, (lr_seq, hr_seq) in enumerate(val_loader):
+                if val_i >= max_val_samples:
+                    break
                 lr_seq = lr_seq.to(device)
                 hr_seq = hr_seq.to(device)
                 T = lr_seq.shape[1]
 
                 if interface == "recurrent":
                     state = None
+                    sr_frames = []
+                    hr_frames = []
                     for t in range(T):
                         sr_frame, state = model(lr_seq[:, t], state)
                         val_psnr += calc_psnr(sr_frame, hr_seq[:, t])
                         val_count += 1
+                        sr_frames.append(sr_frame)
+                        hr_frames.append(hr_seq[:, t])
+                    val_tce += calc_temporal_consistency(sr_frames, hr_frames)
+                    val_seq_count += 1
                 else:  # sliding_window
                     sr_frame = model(lr_seq)
                     val_psnr += calc_psnr(sr_frame, hr_seq[:, T // 2])
                     val_count += 1
 
         avg_psnr = val_psnr / max(val_count, 1)
-        scheduler.step(-avg_psnr)
+        avg_tce = val_tce / max(val_seq_count, 1)
+        scheduler.step()
 
+        # Benchmark de inferência a cada 5 épocas ou na primeira
+        if epoch == start_epoch or (epoch + 1) % 5 == 0:
+            inference_ms = _benchmark_inference(model, device, scale, interface)
         print(f"Epoch {epoch+1} -> Train Loss: {avg_loss:.6f} | "
-              f"Val PSNR: {avg_psnr:.2f} dB")
+              f"Val PSNR: {avg_psnr:.2f} dB | TCE: {avg_tce:.6f} | "
+              f"Inferência: {inference_ms:.1f} ms")
 
         if avg_psnr > best_psnr:
             best_psnr = avg_psnr
+            epochs_without_improvement = 0
             torch.save({
                 'epoch': epoch,
                 'model': model.state_dict(),
                 'optimizer': optimizer.state_dict(),
-                'scaler': scaler.state_dict() if is_cuda else None, # Salva a memória do AMP
+                'scaler': scaler.state_dict() if is_cuda else None,
                 'psnr': best_psnr,
+                'tce': avg_tce,
+                'inference_ms': inference_ms,
                 'model_type': model_type,
                 'model_params': model_params,
                 'config': config.get_config()
             }, full_ckpt_path)
-            print(f"Salvo novo melhor modelo! ({best_psnr:.2f} dB)\n")
+            print(f"Salvo novo melhor modelo! ({best_psnr:.2f} dB | TCE: {avg_tce:.6f})\n")
+        else:
+            epochs_without_improvement += 1
+
+        # Early stopping: modelo atingiu os critérios de qualidade + velocidade
+        if avg_psnr >= target_psnr and inference_ms <= target_inference_ms:
+            print(f"\n{'='*60}")
+            print(f"EARLY STOPPING: Modelo atingiu os critérios!")
+            print(f"  PSNR: {avg_psnr:.2f} dB >= {target_psnr} dB")
+            print(f"  Inferência: {inference_ms:.1f} ms <= {target_inference_ms} ms")
+            print(f"{'='*60}\n")
+            break
+
+        # Early stopping: PSNR estagnado
+        if epochs_without_improvement >= patience:
+            print(f"\n{'='*60}")
+            print(f"EARLY STOPPING: PSNR não melhorou por {patience} épocas.")
+            print(f"  Melhor PSNR: {best_psnr:.2f} dB")
+            if best_psnr < target_psnr:
+                print(f"  (Não atingiu o alvo de {target_psnr} dB)")
+            print(f"{'='*60}\n")
+            break
 
 
 if __name__ == '__main__':

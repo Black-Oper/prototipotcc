@@ -220,6 +220,23 @@ def calc_psnr(img1, img2):
     return 10 * math.log10(1. / mse.item())
 
 
+def calc_ssim(img1, img2):
+    """SSIM via scikit-image. Retorna None se a lib não estiver disponível.
+
+    Aceita tensores (B,C,H,W) ou (C,H,W). Usa o primeiro item do batch.
+    """
+    try:
+        from skimage.metrics import structural_similarity as ssim
+    except ImportError:
+        return None
+    if img1.dim() == 4:
+        img1 = img1[0]
+        img2 = img2[0]
+    a = torch.clamp(img1, 0., 1.).detach().cpu().permute(1, 2, 0).numpy()
+    b = torch.clamp(img2, 0., 1.).detach().cpu().permute(1, 2, 0).numpy()
+    return float(ssim(a, b, channel_axis=2, data_range=1.0))
+
+
 def calc_temporal_consistency(sr_frames, hr_frames):
     """
     Temporal Consistency Error (TCE).
@@ -510,9 +527,14 @@ def train():
 
         model.eval()
         val_psnr = 0.0
+        val_ssim = 0.0
         val_tce = 0.0
         val_count = 0
+        val_ssim_count = 0
         val_seq_count = 0
+        # SSIM é caro: limitamos quantos frames calculamos por época
+        ssim_budget = config.get('val_ssim_budget', 200)
+        ssim_done = 0
         with torch.no_grad():
             for val_i, (lr_seq, hr_seq) in enumerate(val_loader):
                 if val_i >= max_val_samples:
@@ -529,6 +551,12 @@ def train():
                         sr_frame, state = model(lr_seq[:, t], state)
                         val_psnr += calc_psnr(sr_frame, hr_seq[:, t])
                         val_count += 1
+                        if ssim_done < ssim_budget:
+                            s = calc_ssim(sr_frame, hr_seq[:, t])
+                            if s is not None:
+                                val_ssim += s
+                                val_ssim_count += 1
+                            ssim_done += 1
                         sr_frames.append(sr_frame)
                         hr_frames.append(hr_seq[:, t])
                     val_tce += calc_temporal_consistency(sr_frames, hr_frames)
@@ -537,17 +565,25 @@ def train():
                     sr_frame = model(lr_seq)
                     val_psnr += calc_psnr(sr_frame, hr_seq[:, T // 2])
                     val_count += 1
+                    if ssim_done < ssim_budget:
+                        s = calc_ssim(sr_frame, hr_seq[:, T // 2])
+                        if s is not None:
+                            val_ssim += s
+                            val_ssim_count += 1
+                        ssim_done += 1
 
         avg_psnr = val_psnr / max(val_count, 1)
+        avg_ssim = val_ssim / max(val_ssim_count, 1) if val_ssim_count > 0 else float('nan')
         avg_tce = val_tce / max(val_seq_count, 1)
         scheduler.step()
 
         # Benchmark de inferência a cada 5 épocas ou na primeira
         if epoch == start_epoch or (epoch + 1) % 5 == 0:
             inference_ms = _benchmark_inference(model, device, scale, interface)
+        ssim_str = f"{avg_ssim:.4f}" if not math.isnan(avg_ssim) else "N/A"
         print(f"Epoch {epoch+1} -> Train Loss: {avg_loss:.6f} | "
-              f"Val PSNR: {avg_psnr:.2f} dB | TCE: {avg_tce:.6f} | "
-              f"Inferência: {inference_ms:.1f} ms")
+              f"Val PSNR: {avg_psnr:.2f} dB | SSIM: {ssim_str} | "
+              f"TCE: {avg_tce:.6f} | Inferência: {inference_ms:.1f} ms")
 
         if avg_psnr > best_psnr:
             best_psnr = avg_psnr
@@ -558,13 +594,15 @@ def train():
                 'optimizer': optimizer.state_dict(),
                 'scaler': scaler.state_dict() if is_cuda else None,
                 'psnr': best_psnr,
+                'ssim': avg_ssim,
                 'tce': avg_tce,
                 'inference_ms': inference_ms,
                 'model_type': model_type,
                 'model_params': model_params,
                 'config': config.get_config()
             }, full_ckpt_path)
-            print(f"Salvo novo melhor modelo! ({best_psnr:.2f} dB | TCE: {avg_tce:.6f})\n")
+            print(f"Salvo novo melhor modelo! ({best_psnr:.2f} dB | "
+                  f"SSIM: {ssim_str} | TCE: {avg_tce:.6f})\n")
         else:
             epochs_without_improvement += 1
 

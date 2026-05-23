@@ -8,6 +8,7 @@ checkpoints sobre amostras do dataset de validação.
 import os
 import math
 import torch
+import torch.nn.functional as F
 import numpy as np
 import matplotlib.pyplot as plt
 import torchvision.transforms.functional as TF
@@ -16,6 +17,33 @@ import questionary
 
 from models import get_model, get_interface
 from utils.config import ConfigManager
+
+
+# ---------------------------------------------------------------------------
+# Geração de LR on-the-fly (para Vid4 com modelos de scales diferentes)
+# ---------------------------------------------------------------------------
+def _make_lr_from_hr(hr_seq: torch.Tensor, scale: int) -> torch.Tensor:
+    """
+    Gera LR (B, T, C, H/s, W/s) via downsample bicubic do HR.
+
+    Útil quando o dataset só fornece o GT e cada modelo tem um scale_factor
+    diferente — cada checkpoint recebe o LR no seu próprio tamanho esperado.
+    Também ajusta o HR para ser divisível por `scale` (corta na borda),
+    devolvendo o HR alinhado ao SR como segundo retorno.
+    """
+    B, T, C, H, W = hr_seq.shape
+    H_aligned = (H // scale) * scale
+    W_aligned = (W // scale) * scale
+    if H_aligned != H or W_aligned != W:
+        hr_seq = hr_seq[..., :H_aligned, :W_aligned]
+    H_lr = H_aligned // scale
+    W_lr = W_aligned // scale
+    lr = F.interpolate(
+        hr_seq.reshape(B * T, C, H_aligned, W_aligned),
+        size=(H_lr, W_lr),
+        mode='bicubic', align_corners=False, antialias=True,
+    ).clamp(0., 1.).view(B, T, C, H_lr, W_lr)
+    return lr, hr_seq
 
 
 # ---------------------------------------------------------------------------
@@ -146,12 +174,17 @@ def _select_checkpoints(ckpt_dir: str) -> list:
 # Avaliação quantitativa
 # ---------------------------------------------------------------------------
 def _evaluate(models_info: list, val_loader, device: torch.device,
-              seq_len: int, max_samples: int = 200) -> dict:
+              seq_len: int, max_samples: int = 200,
+              eval_lr_from_hr: bool = False) -> dict:
     """
     Avalia cada modelo:
       - recurrent: PSNR/SSIM em TODOS os frames de cada sequência (média),
                    TCE entre frames consecutivos.
       - sliding_window: PSNR/SSIM apenas no frame central da janela.
+
+    Se `eval_lr_from_hr` = True, ignora o `lr_seq` do dataset e gera o LR
+    on-the-fly a partir do `hr_seq` usando o scale_factor de cada checkpoint.
+    Necessário no Vid4 para suportar modelos com scales diferentes (x2/x3/x4).
     """
     results = {
         info["label"]: {"psnr": 0.0, "ssim": 0.0, "ssim_count": 0,
@@ -163,18 +196,24 @@ def _evaluate(models_info: list, val_loader, device: torch.device,
         if i >= max_samples:
             break
 
-        T = hr_seq.shape[1]
         hr_seq_dev = hr_seq.to(device)
 
         for info in models_info:
+            if eval_lr_from_hr:
+                model_lr_seq, model_hr_seq = _make_lr_from_hr(hr_seq_dev, info["scale"])
+            else:
+                model_lr_seq = lr_seq.to(device)
+                model_hr_seq = hr_seq_dev
+
+            T = model_hr_seq.shape[1]
             sr_all = _run_inference(info["model"], info["interface"],
-                                   lr_seq, device, return_all_frames=True)
+                                   model_lr_seq, device, return_all_frames=True)
             entry = results[info["label"]]
 
             if info["interface"] == "recurrent":
                 # PSNR/SSIM em todos os T frames
                 for t, sr in enumerate(sr_all):
-                    hr_t = hr_seq_dev[:, t]
+                    hr_t = model_hr_seq[:, t]
                     entry["psnr"] += _calc_psnr(sr, hr_t)
                     entry["count"] += 1
                     sr_np = sr.squeeze(0).permute(1, 2, 0).cpu().numpy().clip(0, 1)
@@ -185,7 +224,7 @@ def _evaluate(models_info: list, val_loader, device: torch.device,
                         entry["ssim_count"] += 1
             else:  # sliding_window: avalia apenas frame central
                 sr = sr_all[-1]
-                hr_center = hr_seq_dev[:, T // 2]
+                hr_center = model_hr_seq[:, T // 2]
                 entry["psnr"] += _calc_psnr(sr, hr_center)
                 entry["count"] += 1
                 sr_np = sr.squeeze(0).permute(1, 2, 0).cpu().numpy().clip(0, 1)
@@ -197,7 +236,7 @@ def _evaluate(models_info: list, val_loader, device: torch.device,
 
             # Temporal Consistency Error
             if len(sr_all) >= 2:
-                hr_frames = [hr_seq_dev[:, t] for t in range(min(len(sr_all), T))]
+                hr_frames = [model_hr_seq[:, t] for t in range(min(len(sr_all), T))]
                 tce = _calc_temporal_consistency(sr_all[:len(hr_frames)], hr_frames)
                 entry["tce"] += tce
                 entry["tce_count"] += 1
@@ -242,13 +281,14 @@ def _print_table(results: dict):
 # Comparação visual
 # ---------------------------------------------------------------------------
 def _visual_comparison(models_info: list, val_loader, device: torch.device,
-                       seq_len: int, n_samples: int, output_path: str = "comparison.png"):
+                       seq_len: int, n_samples: int, output_path: str = "comparison.png",
+                       eval_lr_from_hr: bool = False):
     samples = []
     for lr_seq, hr_seq in val_loader:
         if len(samples) >= n_samples:
             break
         T = hr_seq.shape[1]
-        samples.append((lr_seq, hr_seq[:, T // 2], T))
+        samples.append((lr_seq, hr_seq, T))
 
     n_cols = 2 + len(models_info)  # Bicubic | modelo1 | ... | HR
     n_rows = len(samples)
@@ -263,12 +303,19 @@ def _visual_comparison(models_info: list, val_loader, device: torch.device,
     for ax, title in zip(axes[0], col_titles):
         ax.set_title(title, fontsize=9)
 
-    for row, (lr_seq, hr_img, T) in enumerate(samples):
-        hr_np = hr_img.squeeze(0).permute(1, 2, 0).numpy().clip(0, 1)
+    for row, (lr_seq, hr_seq, T) in enumerate(samples):
+        hr_seq_dev = hr_seq.to(device)
+        hr_img_center = hr_seq_dev[:, T // 2]
+        hr_np = hr_img_center.squeeze(0).cpu().permute(1, 2, 0).numpy().clip(0, 1)
         h_hr, w_hr = hr_np.shape[:2]
 
-        # Bicubic do frame central
-        lr_center = lr_seq[:, T // 2]
+        # Bicubic do frame central — usa o LR do primeiro modelo (ou do dataset)
+        if eval_lr_from_hr:
+            ref_scale = models_info[0]["scale"] if models_info else 4
+            ref_lr_seq, _ = _make_lr_from_hr(hr_seq_dev, ref_scale)
+            lr_center = ref_lr_seq[:, T // 2].cpu()
+        else:
+            lr_center = lr_seq[:, T // 2]
         lr_pil = TF.to_pil_image(lr_center.squeeze(0).clamp(0, 1))
         bicubic_np = np.array(lr_pil.resize((w_hr, h_hr), Image.BICUBIC)) / 255.0
 
@@ -276,9 +323,15 @@ def _visual_comparison(models_info: list, val_loader, device: torch.device,
         axes[row, 0].axis('off')
 
         for col, info in enumerate(models_info, start=1):
-            sr = _run_inference(info["model"], info["interface"], lr_seq, device)
+            if eval_lr_from_hr:
+                model_lr_seq, model_hr_seq = _make_lr_from_hr(hr_seq_dev, info["scale"])
+                model_hr_center = model_hr_seq[:, T // 2]
+            else:
+                model_lr_seq = lr_seq.to(device)
+                model_hr_center = hr_img_center
+            sr = _run_inference(info["model"], info["interface"], model_lr_seq, device)
             sr_np = sr.squeeze(0).permute(1, 2, 0).cpu().numpy().clip(0, 1)
-            psnr_val = _calc_psnr(sr, hr_img.to(device))
+            psnr_val = _calc_psnr(sr, model_hr_center)
             axes[row, col].imshow(sr_np)
             axes[row, col].axis('off')
             axes[row, col].set_xlabel(f"PSNR: {psnr_val:.2f} dB", fontsize=8)
@@ -376,6 +429,8 @@ def evaluate_and_compare():
     if dataset_choice is None:
         return
 
+    eval_lr_from_hr = False  # default: usa o LR já pareado do dataset
+
     if dataset_choice.startswith("Vimeo"):
         val_ds = VimeoSeptupletDataset(
             vimeo_seq_path, vimeo_test_list,
@@ -392,30 +447,28 @@ def evaluate_and_compare():
                 print(f"Caminho inválido ou não é uma raiz Vid4: {vid4_path}")
                 return
 
-        degradation = questionary.select(
-            "Tipo de degradação LR:",
-            choices=["BI (bicúbico)", "BD (blur-down)"]
-        ).ask()
-        degradation = "BI" if degradation.startswith("BI") else "BD"
-
-        # Vid4 só tem x4 — força o scale correto para a avaliação
-        vid4_scale = 4
-        if scale != vid4_scale:
-            print(f"[AVISO] Vid4 é x4 mas config.scale_factor={scale}. "
-                  f"Usando scale=4 só para esta avaliação.")
+        # No Vid4 o LR é gerado on-the-fly a partir do GT, no scale de cada
+        # checkpoint. Assim modelos x2, x3 e x4 podem ser comparados no mesmo
+        # benchmark sem precisar de LRs pré-computados por scale.
+        scales_used = sorted({info["scale"] for info in models_info})
+        print(f"Vid4: gerando LR on-the-fly do GT via bicubic. "
+              f"Scales dos modelos: {scales_used}")
         val_ds = Vid4Dataset(
-            vid4_path, scale_factor=vid4_scale, seq_len=seq_len,
-            crop_size=None, train=False, degradation=degradation,
+            vid4_path, scale_factor=4, seq_len=seq_len,
+            crop_size=None, train=False, hr_only=True,
         )
         print(val_ds.describe())
+        eval_lr_from_hr = True
 
     val_loader = DataLoader(val_ds, batch_size=1, shuffle=False, num_workers=0)
 
     # 5. Avaliação quantitativa
     print(f"\nAvaliando modelos (até {max_eval} amostras)...")
-    results = _evaluate(models_info, val_loader, device, seq_len, max_eval)
+    results = _evaluate(models_info, val_loader, device, seq_len, max_eval,
+                        eval_lr_from_hr=eval_lr_from_hr)
     _print_table(results)
 
     # 6. Comparação visual
     print(f"\nGerando comparação visual ({n_visual} amostras)...")
-    _visual_comparison(models_info, val_loader, device, seq_len, n_visual)
+    _visual_comparison(models_info, val_loader, device, seq_len, n_visual,
+                       eval_lr_from_hr=eval_lr_from_hr)

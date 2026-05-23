@@ -65,6 +65,7 @@ class Vid4Dataset(Dataset):
         degradation: str = "BI",
         sequences: list[str] | None = None,
         repeat: int = 100,
+        hr_only: bool = False,
     ):
         super().__init__()
         self.root = Path(root)
@@ -73,6 +74,7 @@ class Vid4Dataset(Dataset):
         self.crop_size = crop_size
         self.train = train
         self.repeat = max(1, repeat)
+        self.hr_only = hr_only
 
         deg = degradation.upper()
         if deg not in ("BI", "BD"):
@@ -83,17 +85,18 @@ class Vid4Dataset(Dataset):
         lr_dir = self.root / self.lr_subdir
         if not gt_dir.is_dir():
             raise FileNotFoundError(f"GT não encontrado: {gt_dir}")
-        if not lr_dir.is_dir():
-            raise FileNotFoundError(
-                f"LR não encontrado: {lr_dir}. "
-                f"Verifique o fator de escala (atual: x{scale_factor}) e a degradation."
-            )
 
-        if scale_factor != 4:
-            warnings.warn(
-                f"Vid4 oficial é x4 mas scale_factor={scale_factor}. "
-                "Não há LR correspondente no archive; pode haver mismatch."
-            )
+        if not hr_only:
+            if not lr_dir.is_dir():
+                raise FileNotFoundError(
+                    f"LR não encontrado: {lr_dir}. "
+                    f"Verifique o fator de escala (atual: x{scale_factor}) e a degradation."
+                )
+            if scale_factor != 4:
+                warnings.warn(
+                    f"Vid4 oficial é x4 mas scale_factor={scale_factor}. "
+                    "Não há LR correspondente no archive; pode haver mismatch."
+                )
 
         # Indexa todas as sequências disponíveis e seus frames
         avail = sequences or VID4_SEQUENCES
@@ -101,16 +104,23 @@ class Vid4Dataset(Dataset):
         for name in avail:
             sg = gt_dir / name
             sl = lr_dir / name
-            if not (sg.is_dir() and sl.is_dir()):
-                warnings.warn(f"Sequência ausente, pulando: {name}")
+            if not sg.is_dir():
+                warnings.warn(f"Sequência GT ausente, pulando: {name}")
+                continue
+            if not hr_only and not sl.is_dir():
+                warnings.warn(f"Sequência LR ausente, pulando: {name}")
                 continue
             gt_frames = sorted(sg.glob("*.png"))
-            lr_frames = sorted(sl.glob("*.png"))
-            if len(gt_frames) != len(lr_frames):
-                warnings.warn(
-                    f"{name}: GT ({len(gt_frames)}) != LR ({len(lr_frames)})"
-                )
-            n = min(len(gt_frames), len(lr_frames))
+            if hr_only:
+                lr_frames = gt_frames  # placeholder, não será usado
+                n = len(gt_frames)
+            else:
+                lr_frames = sorted(sl.glob("*.png"))
+                if len(gt_frames) != len(lr_frames):
+                    warnings.warn(
+                        f"{name}: GT ({len(gt_frames)}) != LR ({len(lr_frames)})"
+                    )
+                n = min(len(gt_frames), len(lr_frames))
             if n < self.seq_len:
                 warnings.warn(f"{name} tem {n} frames < seq_len={self.seq_len}, pulando.")
                 continue
@@ -190,9 +200,15 @@ class Vid4Dataset(Dataset):
 
     def _get_full_sequence(self, seq: dict):
         hr_imgs = [Image.open(p).convert("RGB") for p in seq["gt"]]
+        hr_w, hr_h = hr_imgs[0].size
+
+        if self.hr_only:
+            # Não exige LR: retorna HR sem garantir divisibilidade por scale.
+            hr_t = torch.stack([TF.to_tensor(im) for im in hr_imgs])
+            return hr_t, hr_t  # primeiro tensor é placeholder, consumidor ignora
+
         lr_imgs = [Image.open(p).convert("RGB") for p in seq["lr"]]
 
-        hr_w, hr_h = hr_imgs[0].size
         hr_w = (hr_w // self.scale_factor) * self.scale_factor
         hr_h = (hr_h // self.scale_factor) * self.scale_factor
         lr_w, lr_h = hr_w // self.scale_factor, hr_h // self.scale_factor
@@ -207,7 +223,8 @@ class Vid4Dataset(Dataset):
 
     # ------------------------------------------------------------------ info
     def describe(self) -> str:
-        lines = [f"Vid4 root={self.root} deg={self.lr_subdir} train={self.train}"]
+        mode = "HR-only (LR gerado on-the-fly)" if self.hr_only else f"deg={self.lr_subdir}"
+        lines = [f"Vid4 root={self.root} {mode} train={self.train}"]
         for s in self.sequences:
             lines.append(f"  - {s['name']}: {s['n']} frames")
         return "\n".join(lines)

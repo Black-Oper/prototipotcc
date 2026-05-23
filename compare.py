@@ -147,6 +147,12 @@ def _select_checkpoints(ckpt_dir: str) -> list:
 # ---------------------------------------------------------------------------
 def _evaluate(models_info: list, val_loader, device: torch.device,
               seq_len: int, max_samples: int = 200) -> dict:
+    """
+    Avalia cada modelo:
+      - recurrent: PSNR/SSIM em TODOS os frames de cada sequência (média),
+                   TCE entre frames consecutivos.
+      - sliding_window: PSNR/SSIM apenas no frame central da janela.
+    """
     results = {
         info["label"]: {"psnr": 0.0, "ssim": 0.0, "ssim_count": 0,
                          "tce": 0.0, "tce_count": 0, "count": 0}
@@ -157,29 +163,42 @@ def _evaluate(models_info: list, val_loader, device: torch.device,
         if i >= max_samples:
             break
 
-        hr_center = hr_seq[:, seq_len // 2].to(device)
+        T = hr_seq.shape[1]
+        hr_seq_dev = hr_seq.to(device)
 
         for info in models_info:
             sr_all = _run_inference(info["model"], info["interface"],
                                    lr_seq, device, return_all_frames=True)
-            sr = sr_all[-1]  # último frame para PSNR/SSIM
-            psnr = _calc_psnr(sr, hr_center)
-
-            sr_np = sr.squeeze(0).permute(1, 2, 0).cpu().numpy().clip(0, 1)
-            hr_np = hr_center.squeeze(0).permute(1, 2, 0).cpu().numpy().clip(0, 1)
-            ssim_val = _calc_ssim(sr_np, hr_np)
-
             entry = results[info["label"]]
-            entry["psnr"] += psnr
-            entry["count"] += 1
-            if ssim_val is not None:
-                entry["ssim"] += ssim_val
-                entry["ssim_count"] += 1
+
+            if info["interface"] == "recurrent":
+                # PSNR/SSIM em todos os T frames
+                for t, sr in enumerate(sr_all):
+                    hr_t = hr_seq_dev[:, t]
+                    entry["psnr"] += _calc_psnr(sr, hr_t)
+                    entry["count"] += 1
+                    sr_np = sr.squeeze(0).permute(1, 2, 0).cpu().numpy().clip(0, 1)
+                    hr_np = hr_t.squeeze(0).permute(1, 2, 0).cpu().numpy().clip(0, 1)
+                    ssim_val = _calc_ssim(sr_np, hr_np)
+                    if ssim_val is not None:
+                        entry["ssim"] += ssim_val
+                        entry["ssim_count"] += 1
+            else:  # sliding_window: avalia apenas frame central
+                sr = sr_all[-1]
+                hr_center = hr_seq_dev[:, T // 2]
+                entry["psnr"] += _calc_psnr(sr, hr_center)
+                entry["count"] += 1
+                sr_np = sr.squeeze(0).permute(1, 2, 0).cpu().numpy().clip(0, 1)
+                hr_np = hr_center.squeeze(0).permute(1, 2, 0).cpu().numpy().clip(0, 1)
+                ssim_val = _calc_ssim(sr_np, hr_np)
+                if ssim_val is not None:
+                    entry["ssim"] += ssim_val
+                    entry["ssim_count"] += 1
 
             # Temporal Consistency Error
             if len(sr_all) >= 2:
-                hr_frames = [hr_seq[:, t].to(device) for t in range(hr_seq.shape[1])]
-                tce = _calc_temporal_consistency(sr_all, hr_frames)
+                hr_frames = [hr_seq_dev[:, t] for t in range(min(len(sr_all), T))]
+                tce = _calc_temporal_consistency(sr_all[:len(hr_frames)], hr_frames)
                 entry["tce"] += tce
                 entry["tce_count"] += 1
 
@@ -228,7 +247,8 @@ def _visual_comparison(models_info: list, val_loader, device: torch.device,
     for lr_seq, hr_seq in val_loader:
         if len(samples) >= n_samples:
             break
-        samples.append((lr_seq, hr_seq[:, seq_len // 2]))
+        T = hr_seq.shape[1]
+        samples.append((lr_seq, hr_seq[:, T // 2], T))
 
     n_cols = 2 + len(models_info)  # Bicubic | modelo1 | ... | HR
     n_rows = len(samples)
@@ -243,12 +263,12 @@ def _visual_comparison(models_info: list, val_loader, device: torch.device,
     for ax, title in zip(axes[0], col_titles):
         ax.set_title(title, fontsize=9)
 
-    for row, (lr_seq, hr_img) in enumerate(samples):
+    for row, (lr_seq, hr_img, T) in enumerate(samples):
         hr_np = hr_img.squeeze(0).permute(1, 2, 0).numpy().clip(0, 1)
         h_hr, w_hr = hr_np.shape[:2]
 
         # Bicubic do frame central
-        lr_center = lr_seq[:, seq_len // 2]
+        lr_center = lr_seq[:, T // 2]
         lr_pil = TF.to_pil_image(lr_center.squeeze(0).clamp(0, 1))
         bicubic_np = np.array(lr_pil.resize((w_hr, h_hr), Image.BICUBIC)) / 255.0
 
@@ -329,21 +349,66 @@ def evaluate_and_compare():
     if not models_info:
         return
 
-    # 4. Dataset de validação
+    # 4. Dataset de avaliação — Vimeo Septuplet (padrão) ou Vid4 (benchmark)
     from train import VimeoSeptupletDataset, _resolve_vimeo_paths
+    from data.vid4_dataset import Vid4Dataset, is_vid4_root
     from torch.utils.data import DataLoader
 
+    # Constrói lista de opções disponíveis dinamicamente
     vimeo_seq_path, _, vimeo_test_list = _resolve_vimeo_paths(data_path)
+    vimeo_available = os.path.exists(vimeo_seq_path) and os.path.exists(vimeo_test_list)
 
-    if not os.path.exists(vimeo_seq_path) or not os.path.exists(vimeo_test_list):
-        print("Dataset Vimeo não encontrado. Verifique 'dataset_path' no config.json")
-        print(f"  Procurado em: {vimeo_seq_path}")
+    vid4_path = config.get('vid4_path', '')
+    vid4_available = bool(vid4_path) and is_vid4_root(vid4_path)
+
+    choices = []
+    if vimeo_available:
+        choices.append("Vimeo Septuplet (sep_testlist)")
+    if vid4_available:
+        choices.append(f"Vid4 ({vid4_path})")
+    choices.append("Vid4 — informar caminho manualmente")
+
+    dataset_choice = questionary.select(
+        "Dataset de avaliação:",
+        choices=choices
+    ).ask()
+
+    if dataset_choice is None:
         return
 
-    val_ds = VimeoSeptupletDataset(
-        vimeo_seq_path, vimeo_test_list,
-        scale_factor=scale, crop_size=crop_size, seq_len=seq_len, train=False
-    )
+    if dataset_choice.startswith("Vimeo"):
+        val_ds = VimeoSeptupletDataset(
+            vimeo_seq_path, vimeo_test_list,
+            scale_factor=scale, crop_size=crop_size, seq_len=seq_len, train=False
+        )
+        print(f"Avaliando em Vimeo Septuplet: {vimeo_seq_path}")
+    else:
+        if dataset_choice.startswith("Vid4 — informar"):
+            vid4_path = questionary.text(
+                "Caminho da pasta archive (com GT/BIx4/BDx4):",
+                default=vid4_path or r"C:/Users/pedro/Downloads/archive"
+            ).ask()
+            if not vid4_path or not is_vid4_root(vid4_path):
+                print(f"Caminho inválido ou não é uma raiz Vid4: {vid4_path}")
+                return
+
+        degradation = questionary.select(
+            "Tipo de degradação LR:",
+            choices=["BI (bicúbico)", "BD (blur-down)"]
+        ).ask()
+        degradation = "BI" if degradation.startswith("BI") else "BD"
+
+        # Vid4 só tem x4 — força o scale correto para a avaliação
+        vid4_scale = 4
+        if scale != vid4_scale:
+            print(f"[AVISO] Vid4 é x4 mas config.scale_factor={scale}. "
+                  f"Usando scale=4 só para esta avaliação.")
+        val_ds = Vid4Dataset(
+            vid4_path, scale_factor=vid4_scale, seq_len=seq_len,
+            crop_size=None, train=False, degradation=degradation,
+        )
+        print(val_ds.describe())
+
     val_loader = DataLoader(val_ds, batch_size=1, shuffle=False, num_workers=0)
 
     # 5. Avaliação quantitativa

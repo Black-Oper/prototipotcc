@@ -1,0 +1,3 @@
+C:/MY-SPACE/Faculdade de Ciência da Computação/TCC/prototipotcc/inferencecpp/build/CMakeFiles/RTDVSR_CPP.dir
+C:/MY-SPACE/Faculdade de Ciência da Computação/TCC/prototipotcc/inferencecpp/build/CMakeFiles/ALL_BUILD.dir
+C:/MY-SPACE/Faculdade de Ciência da Computação/TCC/prototipotcc/inferencecpp/build/CMakeFiles/ZERO_CHECK.dir

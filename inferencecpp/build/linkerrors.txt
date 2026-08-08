@@ -1,0 +1,8 @@
+================================================================================
+Linker Errors
+Generated: 2026-08-03T15:38:27.182Z
+Total Errors: 1
+================================================================================
+
+[LNK1104] (MSVC)
+cannot open file 'nvinfer.lib' [C:\MY-SPACE\Faculdade de Ciência da Computação\TCC\prototipotcc\inferencecpp\build\RTDVSR_CPP.vcxproj]

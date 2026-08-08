@@ -1,0 +1,10 @@
+^C:\MY-SPACE\FACULDADE DE CIÊNCIA DA COMPUTAÇÃO\TCC\PROTOTIPOTCC\INFERENCECPP\BUILD\CMAKEFILES\0A90123EEAEECFC8BECE43DDC574A462\GENERATE.STAMP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" "-SC:/MY-SPACE/Faculdade de Ciência da Computação/TCC/prototipotcc/inferencecpp" "-BC:/MY-SPACE/Faculdade de Ciência da Computação/TCC/prototipotcc/inferencecpp/build" --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file "C:/MY-SPACE/Faculdade de Ciência da Computação/TCC/prototipotcc/inferencecpp/build/RTDVSR_CPP.sln"
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

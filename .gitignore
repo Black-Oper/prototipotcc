@@ -4,3 +4,5 @@ __pycache__
 inference-cpp/build/
 *.onnx
 *.engine
+*.db
+*.db-journal

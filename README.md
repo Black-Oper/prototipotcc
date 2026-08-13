@@ -247,7 +247,7 @@ prototipotcc/
 │   └── scripts/                # Ferramentas de dev/validação, fora do menu principal
 │       ├── inspect_ckpts.py    # Inspeciona/valida checkpoints salvos
 │       ├── smoke_test_train.py # Teste rápido de forward/backward por arquitetura
-│       ├── grid_search.py      # Busca de hiperparâmetros (smoke test por combinação)
+│       ├── hparam_search.py    # Busca de hiperparâmetros com Optuna (TPE + pruning)
 │       ├── export_trt.py       # Exporta um checkpoint para ONNX (consumido pelo inference-cpp)
 │       ├── compare_video_outputs.py # Valida paridade numérica PyTorch vs inference-cpp
 │       └── valid_model.py      # Inspeciona o .onnx exportado
@@ -265,7 +265,7 @@ continuam rodando de dentro de `training-python/`, por exemplo:
 
 ```bash
 cd training-python
-python scripts/grid_search.py
+python scripts/hparam_search.py
 python scripts/inspect_ckpts.py
 ```
 

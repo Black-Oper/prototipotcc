@@ -35,7 +35,7 @@ from hparam_search import STUDY_NAME, STORAGE, _print_top
 
 warnings.filterwarnings("ignore", category=optuna.exceptions.ExperimentalWarning)
 
-OUTPUT_DIR = Path("assets/hparam_plots")
+OUTPUT_DIR = Path("assets/plots/hparam_search")
 
 PLOTS = {
     "optimization_history": (plot_optimization_history, "PSNR de cada trial ao longo da busca, com o melhor valor até então"),

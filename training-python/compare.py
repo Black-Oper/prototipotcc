@@ -281,7 +281,7 @@ def _print_table(results: dict):
 # Comparação visual
 # ---------------------------------------------------------------------------
 def _visual_comparison(models_info: list, val_loader, device: torch.device,
-                       seq_len: int, n_samples: int, output_path: str = "assets/comparison.png",
+                       seq_len: int, n_samples: int, output_path: str = "assets/plots/comparison.png",
                        eval_lr_from_hr: bool = False):
     samples = []
     for lr_seq, hr_seq in val_loader:

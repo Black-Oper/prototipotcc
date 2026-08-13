@@ -95,7 +95,7 @@ Opções:
 | Baixar dataset | Faz download e extrai o Vimeo Septuplet em `./datasets` |
 | Treinar modelo | Treina o modelo definido em `presets/config.json` |
 | Testar treinamento (3 épocas) | Smoke test rápido do pipeline de treino |
-| Comparar modelos | Avalia PSNR/SSIM e gera `assets/comparison.png` lado a lado |
+| Comparar modelos | Avalia PSNR/SSIM e gera `assets/plots/comparison.png` lado a lado |
 | Super Resolução em Tempo Real | Captura a tela e exibe SR ao vivo (`q` sai, `c` alterna comparação) |
 | Configurações | Troca de preset ou ajuste interativo de hiperparâmetros |
 | Testar CUDA | Mostra build do torch e diagnóstico de GPU |
@@ -241,14 +241,19 @@ prototipotcc/
 │   ├── presets/config.json     # Config ativo
 │   ├── checkpoints/            # Pesos salvos (.pth)
 │   ├── datasets/               # Datasets baixados (git-ignored)
-│   ├── assets/                 # Mídia estática: vídeos de teste e comparison.png
-│   │   ├── comparison.png
-│   │   └── videos/
+│   ├── logs/                   # CSV de métricas por época, um por model_type (gerado por train.py)
+│   ├── assets/
+│   │   ├── videos/             # Vídeos de teste (inference_realtime.py, compare_video_outputs.py)
+│   │   └── plots/              # Tudo que é gráfico/imagem gerada
+│   │       ├── comparison.png          # compare.py
+│   │       ├── hparam_search/          # plot_hparam_search.py
+│   │       └── training_history/       # plot_training_history.py
 │   └── scripts/                # Ferramentas de dev/validação, fora do menu principal
 │       ├── inspect_ckpts.py    # Inspeciona/valida checkpoints salvos
 │       ├── smoke_test_train.py # Teste rápido de forward/backward por arquitetura
 │       ├── hparam_search.py    # Busca de hiperparâmetros com Optuna (TPE + pruning)
-│       ├── plot_hparam_search.py # Gera os gráficos da busca (PNG) em assets/hparam_plots/
+│       ├── plot_hparam_search.py   # Gráficos da busca de hiperparâmetros
+│       ├── plot_training_history.py # Gráficos de loss/PSNR/SSIM/TCE por época + detecção de platô
 │       ├── export_trt.py       # Exporta um checkpoint para ONNX (consumido pelo inference-cpp)
 │       ├── compare_video_outputs.py # Valida paridade numérica PyTorch vs inference-cpp
 │       └── valid_model.py      # Inspeciona o .onnx exportado
@@ -293,7 +298,7 @@ busca:
 python scripts/plot_hparam_search.py
 ```
 
-Gera 5 PNGs em `assets/hparam_plots/`:
+Gera 5 PNGs em `assets/plots/hparam_search/`:
 
 | Arquivo | O que mostra |
 |---|---|
@@ -302,6 +307,29 @@ Gera 5 PNGs em `assets/hparam_plots/`:
 | `intermediate_values.png` | Curva de PSNR por época de cada trial — mostra visualmente os trials podados |
 | `parallel_coordinate.png` | Relação entre combinações de hiperparâmetros e o PSNR resultante |
 | `slice.png` | PSNR em função de cada hiperparâmetro individualmente |
+
+### 7.2 Histórico de treino (loss/PSNR por época)
+
+Todo treino via `train.py` (menu "Treinar modelo") salva uma linha por
+época em `logs/<model_type>_training_log.csv` — `train_loss`, `val_psnr`,
+`val_ssim`, `val_tce`, `inference_ms`, `learning_rate`, se foi o melhor
+checkpoint até então, e timestamp. Interromper e retomar o treino a
+partir de um checkpoint continua o mesmo log; começar um treino do zero
+descarta o log anterior daquele `model_type`.
+
+Para gerar o gráfico:
+
+```bash
+python scripts/plot_training_history.py                  # todos os logs em logs/
+python scripts/plot_training_history.py --model-type RTDVSR
+```
+
+Salva `assets/plots/training_history/<model_type>.png` com 4 painéis
+(Train Loss, Val PSNR, Val SSIM, Val TCE). No painel de PSNR, marca a
+melhor época e detecta a partir de qual época o ganho estagnou (sem
+melhora maior que `--min-delta` dB por `--patience` épocas seguidas,
+padrão 0.05 dB / 5 épocas) — é o gráfico pra frase tipo "até a época X
+teve Y dB de melhora, depois estagnou".
 
 ## 8. Solução de problemas
 

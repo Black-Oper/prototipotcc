@@ -7,9 +7,11 @@ import torchvision.transforms.functional as TF
 from PIL import Image
 import os
 
+import csv
 import math
 import time
 import random
+from datetime import datetime
 from pathlib import Path
 from tqdm import tqdm
 from sklearn.model_selection import train_test_split
@@ -282,6 +284,26 @@ class CharbonnierLoss(nn.Module):
     def forward(self, pred, target):
         return torch.mean(torch.sqrt((pred - target) ** 2 + self.eps_sq))
 
+
+LOG_FIELDNAMES = ['epoch', 'train_loss', 'val_psnr', 'val_ssim', 'val_tce',
+                  'inference_ms', 'learning_rate', 'is_best', 'timestamp']
+
+
+def _init_epoch_log(log_path, resume: bool):
+    """Cria o CSV de log de épocas. Início do zero descarta um log anterior;
+    resume de checkpoint mantém o histórico e só adiciona a partir daqui."""
+    if not resume and os.path.exists(log_path):
+        os.remove(log_path)
+    if not os.path.exists(log_path):
+        with open(log_path, 'w', newline='') as f:
+            csv.DictWriter(f, fieldnames=LOG_FIELDNAMES).writeheader()
+
+
+def _append_epoch_log(log_path, **row):
+    with open(log_path, 'a', newline='') as f:
+        csv.DictWriter(f, fieldnames=LOG_FIELDNAMES).writerow(row)
+
+
 def train():
     config = ConfigManager.get_instance()
     if not config.get_config():
@@ -434,6 +456,11 @@ def train():
     else:
         print(f"Nenhum checkpoint encontrado para '{model_type}' ({ckpt_name}). Iniciando treino do zero.")
 
+    logs_dir = config.get('logs_dir', './logs')
+    os.makedirs(logs_dir, exist_ok=True)
+    log_path = os.path.join(logs_dir, f"{model_type}_training_log.csv")
+    _init_epoch_log(log_path, resume=(start_epoch > 0))
+
     for epoch in range(start_epoch, epochs):
         model.train()
         epoch_loss = 0
@@ -585,7 +612,21 @@ def train():
               f"Val PSNR: {avg_psnr:.2f} dB | SSIM: {ssim_str} | "
               f"TCE: {avg_tce:.6f} | Inferência: {inference_ms:.1f} ms")
 
-        if avg_psnr > best_psnr:
+        is_best = avg_psnr > best_psnr
+        _append_epoch_log(
+            log_path,
+            epoch=epoch + 1,
+            train_loss=round(avg_loss, 6),
+            val_psnr=round(avg_psnr, 4),
+            val_ssim=round(avg_ssim, 4) if not math.isnan(avg_ssim) else '',
+            val_tce=round(avg_tce, 6),
+            inference_ms=round(inference_ms, 2),
+            learning_rate=scheduler.get_last_lr()[0],
+            is_best=is_best,
+            timestamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        )
+
+        if is_best:
             best_psnr = avg_psnr
             epochs_without_improvement = 0
             torch.save({

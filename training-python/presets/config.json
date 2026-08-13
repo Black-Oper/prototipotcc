@@ -12,5 +12,6 @@
         "hidden_dim": 64,
         "num_res_blocks": 6
     },
-    "checkpoint_dir": "./checkpoints"
+    "checkpoint_dir": "./checkpoints",
+    "logs_dir": "./logs"
 }

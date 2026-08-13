@@ -3,6 +3,8 @@ from data import prepare_dataset
 from train import train
 from inference_realtime import run_realtime
 from compare import evaluate_and_compare
+from smoke_test_train import main as run_smoke_test
+from inspect_ckpts import inspect_checkpoints
 import torch
 
 
@@ -22,8 +24,12 @@ def main():
             treinar_modelo()
         elif escolha == "Testar treinamento (3 épocas)":
             testar_treinamento()
+        elif escolha == "Smoke test (forward/backward rápido)":
+            smoke_test()
         elif escolha == "Comparar modelos":
             comparar_modelos()
+        elif escolha == "Inspecionar checkpoints":
+            inspecionar_checkpoints()
         elif escolha == "Super Resolução em Tempo Real":
             super_resolucao_realtime()
         elif escolha == "Configurações":
@@ -91,6 +97,18 @@ def testar_treinamento():
 
 def comparar_modelos():
     evaluate_and_compare()
+    print("\nPressione Enter para continuar...")
+    input()
+
+
+def smoke_test():
+    run_smoke_test()
+    print("\nPressione Enter para continuar...")
+    input()
+
+
+def inspecionar_checkpoints():
+    inspect_checkpoints()
     print("\nPressione Enter para continuar...")
     input()
 

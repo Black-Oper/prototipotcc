@@ -52,6 +52,13 @@ def get_model(name: str, **kwargs):
     return cls(**filtered)
 
 
+def get_model_class(name: str):
+    """Retorna a classe registrada para `name`, sem instanciar."""
+    if name not in MODEL_REGISTRY:
+        raise ValueError(f"Modelo '{name}' não encontrado.")
+    return MODEL_REGISTRY[name]["class"]
+
+
 def get_interface(name: str) -> str:
     """Retorna a interface do modelo ('recurrent' ou 'sliding_window')."""
     if name not in MODEL_REGISTRY:

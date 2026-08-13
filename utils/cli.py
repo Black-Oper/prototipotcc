@@ -17,7 +17,9 @@ def menu():
             "Baixar dataset",
             "Treinar modelo",
             "Testar treinamento (3 épocas)",
+            "Smoke test (forward/backward rápido)",
             "Comparar modelos",
+            "Inspecionar checkpoints",
             "Super Resolução em Tempo Real",
             "Configurações",
             "Testar CUDA",
@@ -72,6 +74,30 @@ def carregar_preset():
         print(f"Preset '{preset_escolhido}' carregado com sucesso!")
 
 
+def _ask_model_params(model_type, current_params):
+    """Pergunta os parâmetros do construtor de `model_type` (via inspect),
+    em vez de um conjunto fixo de campos que não vale para toda arquitetura."""
+    import inspect
+    from models import get_model_class
+
+    sig = inspect.signature(get_model_class(model_type).__init__)
+    skip = {"self", "scale_factor", "channels"}
+
+    model_params = {}
+    for name, param in sig.parameters.items():
+        if name in skip or param.kind == inspect.Parameter.VAR_KEYWORD:
+            continue
+        default = current_params.get(
+            name, param.default if param.default is not inspect.Parameter.empty else 0)
+        value = questionary.text(f"{name}:", default=str(default)).ask()
+        if isinstance(default, bool):
+            model_params[name] = value.strip().lower() in ("true", "1", "yes", "sim")
+        else:
+            model_params[name] = type(default)(value)
+
+    return model_params
+
+
 def definir_parametros():
     from models import list_models
 
@@ -107,19 +133,13 @@ def definir_parametros():
         default=str(config_manager.get('epochs', 50))
     ).ask()
 
-    # Parâmetros específicos do modelo (model_params)
-    print("\nDefina os parâmetros específicos da arquitetura (deixe em branco para usar o padrão do preset).")
-    current_params = config_manager.get('model_params', {})
-
-    hidden_dim = questionary.text(
-        "hidden_dim:",
-        default=str(current_params.get('hidden_dim', 64))
-    ).ask()
-
-    num_res_blocks = questionary.text(
-        "num_res_blocks:",
-        default=str(current_params.get('num_res_blocks', 6))
-    ).ask()
+    print(f"\nDefina os parâmetros específicos de {model_type} "
+          f"(deixe em branco para usar o padrão).")
+    # Só reaproveita os valores salvos se forem da mesma arquitetura —
+    # parâmetros de um modelo diferente não fazem sentido para este.
+    current_params = (config_manager.get('model_params', {})
+                       if config_manager.get('model_type') == model_type else {})
+    model_params = _ask_model_params(model_type, current_params)
 
     nova_config = config_manager.get_config().copy()
     nova_config.update({
@@ -129,10 +149,7 @@ def definir_parametros():
         "learning_rate": float(learning_rate),
         "batch_size": int(batch_size),
         "epochs": int(epochs),
-        "model_params": {
-            "hidden_dim": int(hidden_dim),
-            "num_res_blocks": int(num_res_blocks),
-        },
+        "model_params": model_params,
     })
 
     config_manager.new_config(nova_config)

@@ -9,49 +9,16 @@ def download_datasets():
     base_path.mkdir(parents=True, exist_ok=True)
     
     datasets = {
-        'Set5': {
-            'url': 'https://figshare.com/ndownloader/files/38256852',
-            'type': 'zip',
-            'folder': 'Set5'
-        },
-        'Set14': {
-            'url': 'https://figshare.com/ndownloader/files/38256855',
-            'type': 'zip',
-            'folder': 'Set14'
-        },
-        'BSD100': {
-            'url': 'https://figshare.com/ndownloader/files/38256840',
-            'type': 'zip',
-            'folder': 'BSD100'
-        },
-        'Urban100': {
-            'url': 'https://figshare.com/ndownloader/files/38256858',
-            'type': 'zip',
-            'folder': 'Urban100'
-        },
-        'DIV2K_train_HR': {
-            'url': 'http://data.vision.ee.ethz.ch/cvl/DIV2K/DIV2K_train_HR.zip',
-            'type': 'zip',
-            'folder': 'DIV2K/train_HR'
-        },
-        'DIV2K_valid_HR': {
-            'url': 'http://data.vision.ee.ethz.ch/cvl/DIV2K/DIV2K_valid_HR.zip',
-            'type': 'zip',
-            'folder': 'DIV2K/valid_HR'
-        },
         'vimeo_septuplet': {
             'url': 'http://data.csail.mit.edu/tofu/dataset/vimeo_septuplet.zip',
             'type': 'zip',
             'folder': 'vimeo_septuplet'
         }
     }
-    
-    list_datasets = ['vimeo_septuplet']
-    
+
     print("Iniciando download dos datasets...")
-    
-    for dataset_name in list_datasets:
-        dataset_info = datasets[dataset_name]
+
+    for dataset_name, dataset_info in datasets.items():
         dataset_folder = base_path / dataset_info['folder']
         
         if dataset_folder.exists() and any(dataset_folder.iterdir()):

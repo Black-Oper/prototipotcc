@@ -6,3 +6,4 @@ inference-cpp/build/
 *.engine
 *.db
 *.db-journal
+.vscode

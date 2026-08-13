@@ -248,6 +248,7 @@ prototipotcc/
 │       ├── inspect_ckpts.py    # Inspeciona/valida checkpoints salvos
 │       ├── smoke_test_train.py # Teste rápido de forward/backward por arquitetura
 │       ├── hparam_search.py    # Busca de hiperparâmetros com Optuna (TPE + pruning)
+│       ├── plot_hparam_search.py # Gera os gráficos da busca (PNG) em assets/hparam_plots/
 │       ├── export_trt.py       # Exporta um checkpoint para ONNX (consumido pelo inference-cpp)
 │       ├── compare_video_outputs.py # Valida paridade numérica PyTorch vs inference-cpp
 │       └── valid_model.py      # Inspeciona o .onnx exportado
@@ -268,6 +269,39 @@ cd training-python
 python scripts/hparam_search.py
 python scripts/inspect_ckpts.py
 ```
+
+### 7.1 Acompanhando e apresentando a busca de hiperparâmetros
+
+`hparam_search.py` salva o progresso incrementalmente em
+`rtdvsr_hparam_search.db` (SQLite). Duas formas de acompanhar/usar isso:
+
+**Ao vivo, enquanto a busca roda** — em outro terminal:
+
+```bash
+pip install optuna-dashboard
+optuna-dashboard sqlite:///rtdvsr_hparam_search.db
+```
+
+Abre um dashboard web local com os trials atualizando em tempo real
+(gráficos de convergência, importância de hiperparâmetro, etc.), sem
+precisar mexer em código.
+
+**Gráficos estáticos para o TCC** — depois de rodar (ou interromper) a
+busca:
+
+```bash
+python scripts/plot_hparam_search.py
+```
+
+Gera 5 PNGs em `assets/hparam_plots/`:
+
+| Arquivo | O que mostra |
+|---|---|
+| `optimization_history.png` | PSNR de cada trial ao longo da busca, com o melhor valor até então |
+| `param_importances.png` | Quais hiperparâmetros mais influenciaram o PSNR |
+| `intermediate_values.png` | Curva de PSNR por época de cada trial — mostra visualmente os trials podados |
+| `parallel_coordinate.png` | Relação entre combinações de hiperparâmetros e o PSNR resultante |
+| `slice.png` | PSNR em função de cada hiperparâmetro individualmente |
 
 ## 8. Solução de problemas
 

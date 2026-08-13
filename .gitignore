@@ -1,6 +1,6 @@
 datasets
 __pycache__
 .venv
-inferencecpp/build/
+inference-cpp/build/
 *.onnx
 *.engine

@@ -1,6 +1,6 @@
 import onnx
 
-model = onnx.load("inferencecpp/rtdvsr.onnx")
+model = onnx.load("../inference-cpp/rtdvsr.onnx")
 
 ops = {}
 

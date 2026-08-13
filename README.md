@@ -1,5 +1,13 @@
 # Super-Resolução de Vídeo em Tempo Real
 
+O projeto tem dois módulos independentes:
+
+- **`training-python/`** — treino, avaliação e inferência em tempo real via
+  PyTorch. É o módulo documentado neste README.
+- **`inference-cpp/`** — motor de inferência nativo em C++/TensorRT (WIP),
+  consumindo o `.onnx` exportado por `training-python/export_trt.py`. Tem
+  build própria via CMake; veja `inference-cpp/CMakeLists.txt`.
+
 ## 1. Requisitos
 
 - Windows 10/11, Linux ou macOS
@@ -10,7 +18,7 @@
 
 ```bash
 git clone <seu-repo> prototipotcc
-cd prototipotcc
+cd prototipotcc/training-python
 
 python -m venv .venv
 # Windows
@@ -167,7 +175,7 @@ Edite `models/__init__.py` e importe o novo arquivo para que o decorator
 rode na hora do `import`:
 
 ```python
-from .registry import register_model, get_model, get_interface, list_models
+from .registry import register_model, get_model, get_interface, list_models, get_model_class
 from . import LightweightVSR
 from . import MinhaArquitetura  # <-- adicionar
 ```
@@ -216,21 +224,33 @@ você pode comparar vários modelos diferentes no mesmo gráfico.
 
 ```
 prototipotcc/
-├── app.py                     # Menu principal
-├── train.py                   # Loop de treino (Vimeo + fallback SISR)
-├── compare.py                 # Avaliação PSNR/SSIM + comparação visual
-├── inference_realtime.py      # SR em tempo real via captura de tela
-├── models/
-│   ├── registry.py            # Registry de arquiteturas
-│   ├── LightweightVSR.py      # Arquitetura baseline
-│   └── __init__.py            # Importa cada módulo para registrar
-├── data/prepare_dataset.py    # Download e extração de datasets
-├── utils/
-│   ├── cli.py                 # Menus interativos (questionary)
-│   └── config.py              # ConfigManager singleton
-├── presets/config.json        # Config ativo
-├── checkpoints/               # Pesos salvos (.pth)
-└── datasets/                  # Datasets baixados
+├── training-python/            # Módulo de treino/inferência Python (este README)
+│   ├── app.py                  # Menu principal
+│   ├── train.py                # Loop de treino (Vimeo + fallback SISR)
+│   ├── compare.py               # Avaliação PSNR/SSIM + comparação visual
+│   ├── inference_realtime.py   # SR em tempo real via captura de tela
+│   ├── grid_search.py          # Busca de hiperparâmetros (smoke test por combinação)
+│   ├── inspect_ckpts.py        # Inspeciona/valida checkpoints salvos
+│   ├── smoke_test_train.py     # Teste rápido de forward/backward por arquitetura
+│   ├── export_trt.py           # Exporta um checkpoint para ONNX (consumido pelo inference-cpp)
+│   ├── compare_video_outputs.py # Valida paridade numérica PyTorch vs inference-cpp
+│   ├── models/
+│   │   ├── registry.py         # Registry de arquiteturas
+│   │   ├── blocks.py           # Blocos compartilhados entre arquiteturas (SEBlock, ConvGRU, aligners)
+│   │   └── __init__.py         # Importa cada módulo para registrar
+│   ├── data/prepare_dataset.py # Download e extração de datasets
+│   ├── utils/
+│   │   ├── cli.py              # Menus interativos (questionary)
+│   │   └── config.py           # ConfigManager singleton
+│   ├── presets/config.json     # Config ativo
+│   ├── checkpoints/            # Pesos salvos (.pth)
+│   └── datasets/               # Datasets baixados (git-ignored)
+└── inference-cpp/              # Motor de inferência nativo C++/TensorRT (WIP)
+    ├── CMakeLists.txt          # Paths de OpenCV/TensorRT ainda hardcoded p/ ambiente local
+    ├── include/RTDVSRInferencer.hpp
+    └── src/
+        ├── main.cpp
+        └── RTDVSRInferencer.cpp
 ```
 
 ## 8. Solução de problemas

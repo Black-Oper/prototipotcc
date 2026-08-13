@@ -59,7 +59,7 @@ def export_rtdvsr_to_onnx():
     scale_factor = 2
 
     checkpoint_path = "checkpoints/RTDVSR_best_model.pth"
-    onnx_output_path = "inferencecpp/rtdvsr.onnx"
+    onnx_output_path = "../inference-cpp/rtdvsr.onnx"
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"[Export] Dispositivo detectado: {device}")

@@ -100,7 +100,7 @@ def run_pytorch_stream(video_path, checkpoint_path, max_frames=30):
 
 def run_cpp_validation(video_path, max_frames=30):
     """Executa o executável C++ usando pasta relativa para evitar problemas com acentos."""
-    cpp_dir = os.path.abspath("inferencecpp/build/Debug")
+    cpp_dir = os.path.abspath("../inference-cpp/build/Debug")
     cpp_exe = os.path.join(cpp_dir, "RTDVSR_CPP.exe")
 
     if not os.path.exists(cpp_exe):

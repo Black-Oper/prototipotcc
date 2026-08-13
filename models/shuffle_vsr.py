@@ -97,7 +97,6 @@ class ShuffleVSR(nn.Module):
         self.hidden_dim = hidden_dim
         self.num_blocks = num_blocks
 
-        # 1. Extração de Features — convoluções separáveis (espaço LR)
         self.feat_extract = nn.Sequential(
             nn.Conv2d(channels, hidden_dim, 5, padding=2),  # primeira camada padrão
             nn.PReLU(),
@@ -105,18 +104,15 @@ class ShuffleVSR(nn.Module):
             nn.PReLU(),
         )
 
-        # 2. Fusão Temporal — concat + redução 1x1 (mínimo overhead)
         self.fusion = nn.Sequential(
             nn.Conv2d(hidden_dim * 2, hidden_dim, 1),
             nn.PReLU(),
         )
 
-        # 3. Refinamento — ShuffleBlocks com channel shuffle
         self.refine = nn.Sequential(
             *[ShuffleBlock(hidden_dim) for _ in range(num_blocks)]
         )
 
-        # 4. Reconstrução Sub-pixel — Shi et al., 2016
         self.upsample = nn.Sequential(
             nn.Conv2d(hidden_dim, channels * (scale_factor ** 2), 3, padding=1),
             nn.PixelShuffle(scale_factor),
@@ -134,19 +130,14 @@ class ShuffleVSR(nn.Module):
             sr: Frame SR reconstruído (B, C, H*scale, W*scale)
             state: Features atuais para o próximo frame
         """
-        # 1. Extração de features no espaço LR
         feat = self.feat_extract(x)
 
-        # 2. Fusão temporal simples
         if prev_state is None:
             prev_state = torch.zeros_like(feat)
 
         fused = self.fusion(torch.cat([feat, prev_state], dim=1))
-
-        # 3. Refinamento com skip connection global
         refined = self.refine(fused) + feat
 
-        # 4. Upsampling sub-pixel + skip bicúbico
         residual = self.upsample(refined)
         base = F.interpolate(x, scale_factor=self.scale_factor,
                              mode='bicubic', align_corners=False)

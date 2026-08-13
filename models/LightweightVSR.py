@@ -3,12 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from .registry import register_model
-
-try:
-    from torchvision.ops import DeformConv2d
-    HAS_DEFORM_CONV = True
-except ImportError:
-    HAS_DEFORM_CONV = False
+from .blocks import HAS_DEFORM_CONV, ResidualBlock, DeformableAligner, ConvAligner
 
 # ---------------------------------------------------------------------------
 # Arquitetura: Lightweight Recurrent VSR
@@ -45,59 +40,6 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 
-class ResidualBlock(nn.Module):
-    """Bloco residual leve para refinamento de features no espaço LR."""
-
-    def __init__(self, channels):
-        super().__init__()
-        self.body = nn.Sequential(
-            nn.Conv2d(channels, channels, 3, padding=1),
-            nn.PReLU(),
-            nn.Conv2d(channels, channels, 3, padding=1),
-        )
-
-    def forward(self, x):
-        return x + self.body(x)
-
-
-class _DeformableAligner(nn.Module):
-    """Alinhamento temporal via convolução deformável (Fuoli 2023, Miyazaki 2024).
-
-    Prediz offsets a partir da concatenação [features_atuais, estado_anterior]
-    e aplica convolução deformável no estado anterior para alinhá-lo ao frame
-    corrente. Substitui optical flow com custo muito menor.
-    """
-
-    def __init__(self, hidden_dim):
-        super().__init__()
-        self.offset_conv = nn.Sequential(
-            nn.Conv2d(hidden_dim * 2, hidden_dim, 3, padding=1),
-            nn.PReLU(),
-            nn.Conv2d(hidden_dim, 2 * 3 * 3, 3, padding=1),  # 18 offsets para kernel 3x3
-        )
-        self.deform_conv = DeformConv2d(hidden_dim, hidden_dim, 3, padding=1)
-
-    def forward(self, feat, prev_state):
-        offsets = self.offset_conv(torch.cat([feat, prev_state], dim=1))
-        return self.deform_conv(prev_state, offsets)
-
-
-class _ConvAligner(nn.Module):
-    """Fallback: alinhamento via convolução padrão quando DeformConv2d não
-    está disponível. Menos eficaz, mas funcional."""
-
-    def __init__(self, hidden_dim):
-        super().__init__()
-        self.align = nn.Sequential(
-            nn.Conv2d(hidden_dim * 2, hidden_dim, 3, padding=1),
-            nn.PReLU(),
-            nn.Conv2d(hidden_dim, hidden_dim, 3, padding=1),
-        )
-
-    def forward(self, feat, prev_state):
-        return self.align(torch.cat([feat, prev_state], dim=1))
-
-
 @register_model("LightweightVSR", interface="recurrent")
 class LightweightVSR(nn.Module):
     """
@@ -123,7 +65,6 @@ class LightweightVSR(nn.Module):
         self.hidden_dim = hidden_dim
         self.num_res_blocks = num_res_blocks
 
-        # 1. Extração de Features (espaço LR) — Shi et al., 2016
         self.feat_extract = nn.Sequential(
             nn.Conv2d(channels, hidden_dim, 5, padding=2),
             nn.PReLU(),
@@ -131,26 +72,22 @@ class LightweightVSR(nn.Module):
             nn.PReLU(),
         )
 
-        # 2. Alinhamento Temporal — Fuoli 2023 / Miyazaki 2024
         if HAS_DEFORM_CONV:
-            self.aligner = _DeformableAligner(hidden_dim)
+            self.aligner = DeformableAligner(hidden_dim)
         else:
             print("[AVISO] torchvision.ops.DeformConv2d não disponível. "
                   "Usando alinhamento por convolução padrão (qualidade reduzida).")
-            self.aligner = _ConvAligner(hidden_dim)
+            self.aligner = ConvAligner(hidden_dim)
 
-        # 3. Fusão Temporal — Caballero et al., 2017
         self.fusion = nn.Sequential(
             nn.Conv2d(hidden_dim * 2, hidden_dim, 1),  # 1x1 para redução de canais
             nn.PReLU(),
         )
 
-        # 4. Refinamento — Huang et al., 2025 (LightVSR)
         self.refine = nn.Sequential(
-            *[ResidualBlock(hidden_dim) for _ in range(num_res_blocks)]
+            *[ResidualBlock(hidden_dim, use_attention=False) for _ in range(num_res_blocks)]
         )
 
-        # 5. Reconstrução Sub-pixel — Shi et al., 2016 (ESPCN)
         self.upsample = nn.Sequential(
             nn.Conv2d(hidden_dim, channels * (scale_factor ** 2), 3, padding=1),
             nn.PixelShuffle(scale_factor),
@@ -168,22 +105,15 @@ class LightweightVSR(nn.Module):
             sr: Frame SR reconstruído (B, C, H*scale, W*scale)
             state: Estado oculto atualizado para o próximo frame
         """
-        # 1. Extração de features no espaço LR
         feat = self.feat_extract(x)
 
-        # 2. Alinhamento temporal via convolução deformável
         if prev_state is None:
             prev_state = torch.zeros_like(feat)
 
         aligned = self.aligner(feat, prev_state)
-
-        # 3. Fusão: features atuais + features temporais alinhadas
         fused = self.fusion(torch.cat([feat, aligned], dim=1))
-
-        # 4. Refinamento com skip connection global
         refined = self.refine(fused) + feat
 
-        # 5. Upsampling sub-pixel + skip bicúbico
         residual = self.upsample(refined)
         base = F.interpolate(x, scale_factor=self.scale_factor,
                              mode='bicubic', align_corners=False)

@@ -363,12 +363,10 @@ def evaluate_and_compare():
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    # 1. Selecionar checkpoints
     ckpt_paths = _select_checkpoints(ckpt_dir)
     if not ckpt_paths:
         return
 
-    # 2. Configurações da comparação
     max_eval = questionary.text(
         "Máximo de amostras para avaliação quantitativa:",
         default="200"
@@ -382,7 +380,6 @@ def evaluate_and_compare():
     max_eval = int(max_eval)
     n_visual = int(n_visual)
 
-    # 3. Carregar modelos
     print("\nCarregando modelos...")
     models_info = []
     for path in ckpt_paths:
@@ -402,12 +399,10 @@ def evaluate_and_compare():
     if not models_info:
         return
 
-    # 4. Dataset de avaliação — Vimeo Septuplet (padrão) ou Vid4 (benchmark)
     from train import VimeoSeptupletDataset, _resolve_vimeo_paths
     from data.vid4_dataset import Vid4Dataset, is_vid4_root
     from torch.utils.data import DataLoader
 
-    # Constrói lista de opções disponíveis dinamicamente
     vimeo_seq_path, _, vimeo_test_list = _resolve_vimeo_paths(data_path)
     vimeo_available = os.path.exists(vimeo_seq_path) and os.path.exists(vimeo_test_list)
 
@@ -462,13 +457,11 @@ def evaluate_and_compare():
 
     val_loader = DataLoader(val_ds, batch_size=1, shuffle=False, num_workers=0)
 
-    # 5. Avaliação quantitativa
     print(f"\nAvaliando modelos (até {max_eval} amostras)...")
     results = _evaluate(models_info, val_loader, device, seq_len, max_eval,
                         eval_lr_from_hr=eval_lr_from_hr)
     _print_table(results)
 
-    # 6. Comparação visual
     print(f"\nGerando comparação visual ({n_visual} amostras)...")
     _visual_comparison(models_info, val_loader, device, seq_len, n_visual,
                        eval_lr_from_hr=eval_lr_from_hr)

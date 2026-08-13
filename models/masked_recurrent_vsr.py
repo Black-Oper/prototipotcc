@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from .registry import register_model
+from .blocks import ResidualBlock
 
 # ---------------------------------------------------------------------------
 # Arquitetura: MaskedRecurrentVSR — Adaptive Masked Video Super-Resolution
@@ -90,21 +91,6 @@ class MaskPredictor(nn.Module):
         return mask
 
 
-class ResidualBlock(nn.Module):
-    """Bloco residual leve para refinamento de features no espaço LR."""
-
-    def __init__(self, channels):
-        super().__init__()
-        self.body = nn.Sequential(
-            nn.Conv2d(channels, channels, 3, padding=1),
-            nn.PReLU(),
-            nn.Conv2d(channels, channels, 3, padding=1),
-        )
-
-    def forward(self, x):
-        return x + self.body(x)
-
-
 @register_model("MaskedRecurrentVSR", interface="recurrent")
 class MaskedRecurrentVSR(nn.Module):
     """
@@ -134,7 +120,6 @@ class MaskedRecurrentVSR(nn.Module):
         self.hidden_dim = hidden_dim
         self.num_res_blocks = num_res_blocks
 
-        # 1. Extração de Features (espaço LR)
         self.feat_extract = nn.Sequential(
             nn.Conv2d(channels, hidden_dim, 5, padding=2),
             nn.PReLU(),
@@ -142,21 +127,17 @@ class MaskedRecurrentVSR(nn.Module):
             nn.PReLU(),
         )
 
-        # 2. Predição de Máscara — Zhou et al., 2024
         self.mask_predictor = MaskPredictor(hidden_dim, block_size=mask_block_size)
 
-        # 3. Fusão Temporal — concat + projeção
         self.fusion = nn.Sequential(
             nn.Conv2d(hidden_dim * 2, hidden_dim, 1),
             nn.PReLU(),
         )
 
-        # 4. Refinamento Residual
         self.refine = nn.Sequential(
-            *[ResidualBlock(hidden_dim) for _ in range(num_res_blocks)]
+            *[ResidualBlock(hidden_dim, use_attention=False) for _ in range(num_res_blocks)]
         )
 
-        # 5. Reconstrução Sub-pixel — Shi et al., 2016
         self.upsample = nn.Sequential(
             nn.Conv2d(hidden_dim, channels * (scale_factor ** 2), 3, padding=1),
             nn.PixelShuffle(scale_factor),
@@ -176,7 +157,6 @@ class MaskedRecurrentVSR(nn.Module):
             sr: Frame SR reconstruído (B, C, H*scale, W*scale)
             state: Tuple (features, refined) para o próximo frame
         """
-        # 1. Extração de features no espaço LR
         feat = self.feat_extract(x)
 
         if prev_state is None:
@@ -185,18 +165,13 @@ class MaskedRecurrentVSR(nn.Module):
         else:
             prev_feat, prev_refined = prev_state
 
-        # 2. Predição de máscara temporal
         mask = self.mask_predictor(feat, prev_feat)
         self._last_mask = mask  # Para L_mask no treinamento
 
-        # 3. Fusão mascarada: recomputa onde mudou, reutiliza onde estático
         fused_new = self.fusion(torch.cat([feat, prev_feat], dim=1))
         fused = mask * fused_new + (1 - mask) * prev_refined
-
-        # 4. Refinamento com skip connection global
         refined = self.refine(fused) + feat
 
-        # 5. Upsampling sub-pixel + skip bicúbico
         residual = self.upsample(refined)
         base = F.interpolate(x, scale_factor=self.scale_factor,
                              mode='bicubic', align_corners=False)

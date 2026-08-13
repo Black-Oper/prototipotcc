@@ -199,14 +199,12 @@ def _build_frame_display(img_lr_bgr, output_bgr, display_mode, display_w, displa
 
 
 def run_realtime():
-    # 1. Seleção de checkpoint
     full_path = _select_checkpoint()
     if full_path is None:
         return
 
     model, interface, scale, model_type = load_model(full_path)
 
-    # 2. Seleção de fonte
     source = _select_source()
     cap = None
     sct = None
@@ -251,7 +249,6 @@ def run_realtime():
         }
         source_label = f"Tela {mon_idx} ({capture_box['width']}x{capture_box['height']})"
 
-    # 3. Modo de exibição
     display_mode = _select_display_mode()
 
     # Resolução da janela de exibição — cabe na tela
@@ -281,7 +278,6 @@ def run_realtime():
     with torch.no_grad():
         while True:
             if not paused:
-                # --- A. Captura ---
                 if cap is not None:
                     ret, frame_bgr = cap.read()
                     if not ret:
@@ -295,30 +291,25 @@ def run_realtime():
                     img_bgra = np.array(screenshot)
                     img_rgb = cv2.cvtColor(img_bgra, cv2.COLOR_BGRA2RGB)
 
-                # --- B. Downscale para LR ---
                 img_lr = cv2.resize(img_rgb, LR_SIZE, interpolation=cv2.INTER_CUBIC)
                 img_norm = img_lr.astype(np.float32) / 255.0
 
-                # --- C. Tensor ---
                 input_tensor = (torch.from_numpy(img_norm)
                                 .permute(2, 0, 1)
                                 .unsqueeze(0)
                                 .to(DEVICE))
 
-                # --- D. Inferência ---
                 if interface == "recurrent":
                     output_tensor, state = model(input_tensor, state)
                 else:
                     output_tensor = model(input_tensor.unsqueeze(1))
 
-                # --- E. Pós-processamento ---
                 output_img = output_tensor.squeeze(0).permute(1, 2, 0).cpu().numpy()
                 output_img = np.clip(output_img, 0, 1)
                 output_img = (output_img * 255).astype(np.uint8)
                 output_bgr = cv2.cvtColor(output_img, cv2.COLOR_RGB2BGR)
                 img_lr_bgr = cv2.cvtColor(img_lr, cv2.COLOR_RGB2BGR)
 
-                # --- F. FPS ---
                 curr_time = time.time()
                 dt = max(curr_time - prev_time, 1e-6)
                 fps = 1.0 / dt
@@ -326,7 +317,6 @@ def run_realtime():
                 frame_count += 1
                 fps_avg = fps_avg * 0.9 + fps * 0.1 if frame_count > 1 else fps
 
-                # --- G. Montar exibição ---
                 display = _build_frame_display(
                     img_lr_bgr, output_bgr, display_mode, display_w, display_h)
 
@@ -337,7 +327,6 @@ def run_realtime():
                 cv2.putText(display, info, (10, h_disp - 10),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
 
-            # --- H. Exibição ---
             cv2.imshow(window_name, display)
 
             key = cv2.waitKey(1) & 0xFF

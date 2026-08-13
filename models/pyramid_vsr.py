@@ -3,12 +3,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from .registry import register_model
+from .blocks import HAS_DEFORM_CONV, ResidualBlock, ConvGRU
 
 try:
     from torchvision.ops import DeformConv2d
-    HAS_DEFORM_CONV = True
 except ImportError:
-    HAS_DEFORM_CONV = False
+    pass
 
 # ---------------------------------------------------------------------------
 # Arquitetura: PyramidVSR — Multi-Scale Coarse-to-Fine Video Super-Resolution
@@ -42,39 +42,6 @@ except ImportError:
 #   - Huang et al., 2025 (LightVSR)
 #       Agregação de features multi-escala para preservar detalhes finos.
 
-
-
-class SEBlock(nn.Module):
-    """Squeeze-and-Excitation para atenção por canal."""
-
-    def __init__(self, channels, reduction=8):
-        super().__init__()
-        self.squeeze = nn.AdaptiveAvgPool2d(1)
-        self.excitation = nn.Sequential(
-            nn.Conv2d(channels, channels // reduction, 1, bias=False),
-            nn.PReLU(),
-            nn.Conv2d(channels // reduction, channels, 1, bias=False),
-            nn.Sigmoid(),
-        )
-
-    def forward(self, x):
-        return x * self.excitation(self.squeeze(x))
-
-
-class ResidualBlock(nn.Module):
-    """Bloco residual com SE-attention."""
-
-    def __init__(self, channels, use_attention=True):
-        super().__init__()
-        self.body = nn.Sequential(
-            nn.Conv2d(channels, channels, 3, padding=1),
-            nn.PReLU(),
-            nn.Conv2d(channels, channels, 3, padding=1),
-        )
-        self.attention = SEBlock(channels) if use_attention else nn.Identity()
-
-    def forward(self, x):
-        return x + self.attention(self.body(x))
 
 
 class _PyramidDeformAligner(nn.Module):
@@ -169,25 +136,6 @@ class _PyramidConvAligner(nn.Module):
         return self.align_fine(torch.cat([feat + coarse_up, prev_state], dim=1))
 
 
-class ConvGRU(nn.Module):
-    """Unidade recorrente convolucional para fusão temporal."""
-
-    def __init__(self, hidden_dim):
-        super().__init__()
-        self.conv_reset = nn.Conv2d(hidden_dim * 2, hidden_dim, 3, padding=1)
-        self.conv_update = nn.Conv2d(hidden_dim * 2, hidden_dim, 3, padding=1)
-        self.conv_candidate = nn.Conv2d(hidden_dim * 2, hidden_dim, 3, padding=1)
-
-    def forward(self, feat, prev_state):
-        combined = torch.cat([feat, prev_state], dim=1)
-        reset = torch.sigmoid(self.conv_reset(combined))
-        update = torch.sigmoid(self.conv_update(combined))
-        candidate = torch.tanh(
-            self.conv_candidate(torch.cat([feat, reset * prev_state], dim=1))
-        )
-        return (1 - update) * prev_state + update * candidate
-
-
 @register_model("PyramidVSR", interface="recurrent")
 class PyramidVSR(nn.Module):
     """
@@ -215,7 +163,6 @@ class PyramidVSR(nn.Module):
         self.hidden_dim = hidden_dim
         self.num_res_blocks = num_res_blocks
 
-        # 1. Extração de Features (espaço LR)
         self.feat_extract = nn.Sequential(
             nn.Conv2d(channels, hidden_dim, 5, padding=2),
             nn.PReLU(),
@@ -225,7 +172,6 @@ class PyramidVSR(nn.Module):
             nn.PReLU(),
         )
 
-        # 2. Alinhamento Piramidal — Fuoli 2023 / Miyazaki 2024
         if HAS_DEFORM_CONV:
             self.aligner = _PyramidDeformAligner(hidden_dim)
         else:
@@ -233,16 +179,13 @@ class PyramidVSR(nn.Module):
                   "Usando alinhamento piramidal por convolução padrão.")
             self.aligner = _PyramidConvAligner(hidden_dim)
 
-        # 3. Fusão Temporal via ConvGRU
         self.fusion = ConvGRU(hidden_dim)
 
-        # 4. Refinamento com SE-attention
         self.refine = nn.Sequential(
             *[ResidualBlock(hidden_dim, use_attention=(i % 2 == 1))
               for i in range(num_res_blocks)]
         )
 
-        # 5. Reconstrução Sub-pixel — Shi et al., 2016
         self.upsample = nn.Sequential(
             nn.Conv2d(hidden_dim, channels * (scale_factor ** 2), 3, padding=1),
             nn.PixelShuffle(scale_factor),
@@ -260,22 +203,15 @@ class PyramidVSR(nn.Module):
             sr: Frame SR reconstruído (B, C, H*scale, W*scale)
             state: Estado oculto atualizado para o próximo frame
         """
-        # 1. Extração de features no espaço LR
         feat = self.feat_extract(x)
 
-        # 2. Alinhamento piramidal coarse-to-fine
         if prev_state is None:
             prev_state = torch.zeros_like(feat)
 
         aligned = self.aligner(feat, prev_state)
-
-        # 3. Fusão temporal recorrente via ConvGRU
         state = self.fusion(feat, aligned)
-
-        # 4. Refinamento com skip connection global
         refined = self.refine(state) + feat
 
-        # 5. Upsampling sub-pixel + skip bicúbico
         residual = self.upsample(refined)
         base = F.interpolate(x, scale_factor=self.scale_factor,
                              mode='bicubic', align_corners=False)

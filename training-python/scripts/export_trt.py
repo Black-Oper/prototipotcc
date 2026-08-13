@@ -1,11 +1,14 @@
 import sys
 import os
+from pathlib import Path
+
 import torch
 import torchvision
 import torchvision.ops
 from torch.onnx import register_custom_op_symbolic
 from torch.onnx.symbolic_helper import parse_args
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from models.rtdvsr import RTDVSR
 
 if sys.platform == "win32":

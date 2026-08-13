@@ -4,14 +4,15 @@ Grid Search de Hiperparâmetros — RTDVSR
 Roda um smoke test de 3 épocas para cada combinação de hiperparâmetros
 e salva os resultados em grid_search_results.csv.
 
-Uso:
-    python grid_search.py
+Uso (a partir de training-python/):
+    python scripts/grid_search.py
 
 Ao final, imprime as 5 melhores combinações por PSNR de validação
 e salva o CSV completo para análise.
 """
 
 import os
+import sys
 import csv
 import time
 import math
@@ -26,6 +27,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from models import get_model, get_interface
 from train import (
     VimeoSeptupletDataset,

@@ -95,7 +95,7 @@ Opções:
 | Baixar dataset | Faz download e extrai o Vimeo Septuplet em `./datasets` |
 | Treinar modelo | Treina o modelo definido em `presets/config.json` |
 | Testar treinamento (3 épocas) | Smoke test rápido do pipeline de treino |
-| Comparar modelos | Avalia PSNR/SSIM e gera `comparison.png` lado a lado |
+| Comparar modelos | Avalia PSNR/SSIM e gera `assets/comparison.png` lado a lado |
 | Super Resolução em Tempo Real | Captura a tela e exibe SR ao vivo (`q` sai, `c` alterna comparação) |
 | Configurações | Troca de preset ou ajuste interativo de hiperparâmetros |
 | Testar CUDA | Mostra build do torch e diagnóstico de GPU |
@@ -225,15 +225,11 @@ você pode comparar vários modelos diferentes no mesmo gráfico.
 ```
 prototipotcc/
 ├── training-python/            # Módulo de treino/inferência Python (este README)
-│   ├── app.py                  # Menu principal
+│   ├── app.py                  # Menu principal — ponto de entrada
 │   ├── train.py                # Loop de treino (Vimeo + fallback SISR)
 │   ├── compare.py               # Avaliação PSNR/SSIM + comparação visual
 │   ├── inference_realtime.py   # SR em tempo real via captura de tela
-│   ├── grid_search.py          # Busca de hiperparâmetros (smoke test por combinação)
-│   ├── inspect_ckpts.py        # Inspeciona/valida checkpoints salvos
-│   ├── smoke_test_train.py     # Teste rápido de forward/backward por arquitetura
-│   ├── export_trt.py           # Exporta um checkpoint para ONNX (consumido pelo inference-cpp)
-│   ├── compare_video_outputs.py # Valida paridade numérica PyTorch vs inference-cpp
+│   ├── requirements.txt
 │   ├── models/
 │   │   ├── registry.py         # Registry de arquiteturas
 │   │   ├── blocks.py           # Blocos compartilhados entre arquiteturas (SEBlock, ConvGRU, aligners)
@@ -244,13 +240,33 @@ prototipotcc/
 │   │   └── config.py           # ConfigManager singleton
 │   ├── presets/config.json     # Config ativo
 │   ├── checkpoints/            # Pesos salvos (.pth)
-│   └── datasets/               # Datasets baixados (git-ignored)
+│   ├── datasets/               # Datasets baixados (git-ignored)
+│   ├── assets/                 # Mídia estática: vídeos de teste e comparison.png
+│   │   ├── comparison.png
+│   │   └── videos/
+│   └── scripts/                # Ferramentas de dev/validação, fora do menu principal
+│       ├── inspect_ckpts.py    # Inspeciona/valida checkpoints salvos
+│       ├── smoke_test_train.py # Teste rápido de forward/backward por arquitetura
+│       ├── grid_search.py      # Busca de hiperparâmetros (smoke test por combinação)
+│       ├── export_trt.py       # Exporta um checkpoint para ONNX (consumido pelo inference-cpp)
+│       ├── compare_video_outputs.py # Valida paridade numérica PyTorch vs inference-cpp
+│       └── valid_model.py      # Inspeciona o .onnx exportado
 └── inference-cpp/              # Motor de inferência nativo C++/TensorRT (WIP)
     ├── CMakeLists.txt          # Paths de OpenCV/TensorRT ainda hardcoded p/ ambiente local
     ├── include/RTDVSRInferencer.hpp
     └── src/
         ├── main.cpp
         └── RTDVSRInferencer.cpp
+```
+
+Os scripts em `scripts/` importam `models`/`train`/`utils` do diretório pai
+via um pequeno bootstrap de `sys.path` no topo do arquivo — por isso
+continuam rodando de dentro de `training-python/`, por exemplo:
+
+```bash
+cd training-python
+python scripts/grid_search.py
+python scripts/inspect_ckpts.py
 ```
 
 ## 8. Solução de problemas

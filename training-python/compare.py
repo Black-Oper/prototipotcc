@@ -281,7 +281,7 @@ def _print_table(results: dict):
 # Comparação visual
 # ---------------------------------------------------------------------------
 def _visual_comparison(models_info: list, val_loader, device: torch.device,
-                       seq_len: int, n_samples: int, output_path: str = "comparison.png",
+                       seq_len: int, n_samples: int, output_path: str = "assets/comparison.png",
                        eval_lr_from_hr: bool = False):
     samples = []
     for lr_seq, hr_seq in val_loader:
@@ -340,6 +340,7 @@ def _visual_comparison(models_info: list, val_loader, device: torch.device,
         axes[row, -1].axis('off')
 
     plt.tight_layout()
+    os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
     print(f"\nComparação visual salva em '{output_path}'")
     plt.show()

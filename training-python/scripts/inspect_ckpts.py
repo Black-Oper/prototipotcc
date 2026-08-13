@@ -1,6 +1,11 @@
 """Inspeciona os checkpoints existentes e simula a logica de resume."""
 import os
+import sys
+from pathlib import Path
+
 import torch
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from models import get_model
 
 

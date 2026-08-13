@@ -3,10 +3,14 @@ Smoke test: reproduz o caminho 'recurrent' do train.py para LightweightVSR,
 PyramidVSR e MaskedRecurrentVSR. Verifica forward, backward, dtype/shape
 do estado, mask loss e estabilidade numerica em FP32 e (se disponivel) BF16.
 """
+import sys
+from pathlib import Path
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from models import get_model, get_interface
 from train import CharbonnierLoss, _detach_state, _benchmark_inference
 

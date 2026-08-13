@@ -2,10 +2,14 @@ import sys
 import os
 import glob
 import subprocess
+from pathlib import Path
+
 import torch
 import cv2
 import numpy as np
 import questionary
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
@@ -34,6 +38,7 @@ def get_video_file():
     for ext in video_exts:
         video_files.extend(glob.glob(ext))
         video_files.extend(glob.glob(os.path.join('data', '**', ext), recursive=True))
+        video_files.extend(glob.glob(os.path.join('assets', 'videos', ext)))
 
     video_files = sorted(set(video_files))
 

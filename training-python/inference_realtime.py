@@ -128,6 +128,7 @@ def _select_video_file():
     for ext in video_exts:
         video_files.extend(glob.glob(ext))
         video_files.extend(glob.glob(os.path.join('data', '**', ext), recursive=True))
+        video_files.extend(glob.glob(os.path.join('assets', 'videos', ext)))
 
     if not video_files:
         path = questionary.text(

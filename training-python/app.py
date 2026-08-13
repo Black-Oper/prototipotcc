@@ -3,8 +3,8 @@ from data import prepare_dataset
 from train import train
 from inference_realtime import run_realtime
 from compare import evaluate_and_compare
-from smoke_test_train import main as run_smoke_test
-from inspect_ckpts import inspect_checkpoints
+from scripts.smoke_test_train import main as run_smoke_test
+from scripts.inspect_ckpts import inspect_checkpoints
 import torch
 
 

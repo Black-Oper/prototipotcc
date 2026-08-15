@@ -46,8 +46,21 @@ PLOTS = {
 }
 
 
-def _save_plot(ax, path):
-    fig = np.atleast_1d(ax).flatten()[0].get_figure()
+def _save_plot(ax, path, name=None, n_trials=0):
+    single_ax = np.atleast_1d(ax).flatten()[0]
+    fig = single_ax.get_figure()
+
+    if name == "intermediate_values" and n_trials > 15:
+        # Uma linha por trial: com muitos trials o legend vira uma lista
+        # enorme que empurra o gráfico pra um canto. Sem ele dá pra
+        # distinguir tendência geral e trials podados mesmo assim.
+        legend = single_ax.get_legend()
+        if legend is not None:
+            legend.remove()
+
+    if name == "parallel_coordinate":
+        fig.set_size_inches(14, 6)
+
     fig.tight_layout()
     fig.savefig(path, dpi=200, bbox_inches="tight")
     plt.close(fig)
@@ -73,7 +86,7 @@ def main():
         out_path = OUTPUT_DIR / f"{name}.png"
         try:
             ax = plot_fn(study)
-            _save_plot(ax, out_path)
+            _save_plot(ax, out_path, name=name, n_trials=len(study.trials))
             print(f"  [OK] {out_path.name} — {desc}")
         except Exception as e:
             print(f"  [pulado] {name}: {e}")

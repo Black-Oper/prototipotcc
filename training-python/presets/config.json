@@ -3,7 +3,7 @@
     "vid4_path": "C:/Users/pedro/Downloads/archive",
     "scale_factor": 2,
     "seq_len": 3,
-    "learning_rate": 0.0002,
+    "learning_rate": 0.0014,
     "batch_size": 4,
     "epochs": 50,
     "crop_size": 256,

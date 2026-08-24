@@ -6,4 +6,5 @@ inference-cpp/build/
 *.engine
 *.db
 *.db-journal
+training-python/scripts/.kfold_lists/
 .vscode

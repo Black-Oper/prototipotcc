@@ -112,12 +112,19 @@ def _validate(model, val_loader, device, max_samples, ssim_budget=50):
     return avg_psnr, avg_ssim
 
 
-def objective(trial, train_ds, val_ds, device, epochs):
-    lr = trial.suggest_float("learning_rate", 1e-5, 1e-2, log=True)
-    hidden_dim = trial.suggest_categorical("hidden_dim", [48, 64, 96])
-    num_res_blocks = trial.suggest_int("num_res_blocks", 3, 5)
-    temporal_weight = trial.suggest_float("temporal_loss_weight", 0.05, 0.2)
+def _train_config(hidden_dim, num_res_blocks, lr, temporal_weight,
+                   train_ds, val_ds, device, epochs, trial=None,
+                   on_epoch_end=None):
+    """Treina uma configuração de hiperparâmetros por `epochs` épocas
+    (cada uma limitada a `FIXED["max_train_batches"]` batches) e retorna
+    (val_psnr, val_ssim) da última época.
 
+    `trial`: se fornecido (optuna.Trial), reporta progresso e permite poda
+    (usado pela busca de hiperparâmetros). Se None, roda todas as épocas
+    sem poda (usado pela validação k-fold).
+    `on_epoch_end(epoch, val_psnr, val_ssim)`: se fornecido, é chamado ao
+    final de cada época — usado para logar métricas por época.
+    """
     _set_seed(FIXED["seed"])
 
     scale = FIXED["scale_factor"]
@@ -202,11 +209,27 @@ def objective(trial, train_ds, val_ds, device, epochs):
         scheduler.step()
 
         val_psnr, val_ssim = _validate(model, val_loader, device, FIXED["max_val_samples"])
-        trial.report(val_psnr, epoch)
-        trial.set_user_attr("ssim", None if np.isnan(val_ssim) else round(val_ssim, 4))
-        if trial.should_prune():
-            raise optuna.TrialPruned()
 
+        if on_epoch_end is not None:
+            on_epoch_end(epoch, val_psnr, val_ssim)
+
+        if trial is not None:
+            trial.report(val_psnr, epoch)
+            trial.set_user_attr("ssim", None if np.isnan(val_ssim) else round(val_ssim, 4))
+            if trial.should_prune():
+                raise optuna.TrialPruned()
+
+    return val_psnr, val_ssim
+
+
+def objective(trial, train_ds, val_ds, device, epochs):
+    lr = trial.suggest_float("learning_rate", 1e-5, 1e-2, log=True)
+    hidden_dim = trial.suggest_categorical("hidden_dim", [48, 64, 96])
+    num_res_blocks = trial.suggest_int("num_res_blocks", 3, 5)
+    temporal_weight = trial.suggest_float("temporal_loss_weight", 0.05, 0.2)
+
+    val_psnr, _ = _train_config(hidden_dim, num_res_blocks, lr, temporal_weight,
+                                train_ds, val_ds, device, epochs, trial=trial)
     return val_psnr
 
 

@@ -2,6 +2,9 @@
 # em vez de deixar o pip resolver o padrão (que baixa o wheel CPU-only):
 #   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
 # Ajuste cu121 para a versão do CUDA Toolkit suportada pelo seu driver.
+#
+# Em macOS (Apple Silicon), o `pip install torch torchvision` padrão já vem
+# com suporte a GPU via MPS (Metal) — não precisa de --index-url especial.
 torch
 torchvision
 requests

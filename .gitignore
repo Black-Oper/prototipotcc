@@ -1,6 +1,7 @@
 datasets
 __pycache__
 .venv
+.venv_bench
 inference-cpp/build/
 *.onnx
 *.engine
@@ -8,3 +9,4 @@ inference-cpp/build/
 *.db-journal
 training-python/scripts/.kfold_lists/
 .vscode
+.claude

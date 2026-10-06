@@ -7,6 +7,7 @@ import torchvision.transforms.functional as TF
 from PIL import Image
 import os
 
+import argparse
 import csv
 import math
 import time
@@ -304,7 +305,7 @@ def _append_epoch_log(log_path, **row):
         csv.DictWriter(f, fieldnames=LOG_FIELDNAMES).writerow(row)
 
 
-def train():
+def train(fresh: bool = False):
     config = ConfigManager.get_instance()
     if not config.get_config():
         try:
@@ -429,6 +430,7 @@ def train():
     os.makedirs(ckpt_dir, exist_ok=True)
     ckpt_name = f"{model_type}_best_model.pth"
     full_ckpt_path = os.path.join(ckpt_dir, ckpt_name)
+    last_ckpt_path = os.path.join(ckpt_dir, f"{model_type}_last.pth")
 
     # Early stopping: para quando PSNR >= 27 dB e inferência <= 16 ms,
     # ou quando PSNR não melhora por `patience` épocas consecutivas.
@@ -440,21 +442,37 @@ def train():
     start_epoch = 0
     best_psnr = 0.0
 
-    if os.path.exists(full_ckpt_path):
-        print(f"Carregando checkpoint: {full_ckpt_path}")
+    if fresh:
+        stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        for p in (full_ckpt_path, last_ckpt_path):
+            if os.path.exists(p):
+                os.rename(p, p + f".bak_{stamp}")
+                print(f"--fresh: checkpoint antigo movido para {p}.bak_{stamp}")
+
+    # Resume prefere o _last (última época); cai pro _best em checkpoints antigos.
+    resume_path = last_ckpt_path if os.path.exists(last_ckpt_path) else full_ckpt_path
+
+    if os.path.exists(resume_path):
+        print(f"Carregando checkpoint: {resume_path}")
         # weights_only=False adicionado para limpar o aviso de segurança do PyTorch 2.4+
-        checkpoint = torch.load(full_ckpt_path, map_location=device, weights_only=False)
+        checkpoint = torch.load(resume_path, map_location=device, weights_only=False)
         model.load_state_dict(checkpoint['model'])
         optimizer.load_state_dict(checkpoint['optimizer'])
-        
+
         if 'scaler' in checkpoint and checkpoint['scaler'] is not None and is_cuda:
             scaler.load_state_dict(checkpoint['scaler'])
-            
+
         start_epoch = checkpoint['epoch'] + 1
-        best_psnr = checkpoint.get('psnr', 0.0)
-        print(f"Resumindo da época {start_epoch} com PSNR base: {best_psnr:.2f} dB")
+        best_psnr = checkpoint.get('best_psnr', checkpoint.get('psnr', 0.0))
+        epochs_without_improvement = checkpoint.get('epochs_without_improvement', 0)
+        if checkpoint.get('scheduler') is not None:
+            scheduler.load_state_dict(checkpoint['scheduler'])
+        else:
+            for _ in range(start_epoch):
+                scheduler.step()
+        print(f"Resumindo da época {start_epoch} com melhor PSNR: {best_psnr:.2f} dB")
     else:
-        print(f"Nenhum checkpoint encontrado para '{model_type}' ({ckpt_name}). Iniciando treino do zero.")
+        print(f"Nenhum checkpoint encontrado para '{model_type}'. Iniciando treino do zero.")
 
     logs_dir = config.get('logs_dir', './logs')
     os.makedirs(logs_dir, exist_ok=True)
@@ -534,9 +552,10 @@ def train():
                 else:
                     has_nan = False
                 if has_nan:
-                    if os.path.exists(full_ckpt_path):
+                    nan_restore_path = last_ckpt_path if os.path.exists(last_ckpt_path) else full_ckpt_path
+                    if os.path.exists(nan_restore_path):
                         print("\n[AVISO] NaN detectado nos pesos! Restaurando último checkpoint...")
-                        ckpt = torch.load(full_ckpt_path, map_location=device, weights_only=False)
+                        ckpt = torch.load(nan_restore_path, map_location=device, weights_only=False)
                         model.load_state_dict(ckpt['model'])
                         optimizer.load_state_dict(ckpt['optimizer'])
                     else:
@@ -647,6 +666,22 @@ def train():
         else:
             epochs_without_improvement += 1
 
+        last_tmp = last_ckpt_path + '.tmp'
+        torch.save({
+            'epoch': epoch,
+            'model': model.state_dict(),
+            'optimizer': optimizer.state_dict(),
+            'scaler': scaler.state_dict() if is_cuda else None,
+            'scheduler': scheduler.state_dict(),
+            'best_psnr': best_psnr,
+            'psnr': avg_psnr,
+            'epochs_without_improvement': epochs_without_improvement,
+            'model_type': model_type,
+            'model_params': model_params,
+            'config': config.get_config()
+        }, last_tmp)
+        os.replace(last_tmp, last_ckpt_path)
+
         # Early stopping: modelo atingiu os critérios de qualidade + velocidade
         if avg_psnr >= target_psnr and inference_ms <= target_inference_ms:
             print(f"\n{'='*60}")
@@ -668,4 +703,8 @@ def train():
 
 
 if __name__ == '__main__':
-    train()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--fresh', action='store_true',
+                         help='Ignora checkpoint existente e treina do zero (faz backup do antigo).')
+    args = parser.parse_args()
+    train(fresh=args.fresh)

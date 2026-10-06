@@ -16,5 +16,5 @@
     "logs_dir": "./logs",
     "target_psnr": 40.0,
     "target_inference_ms": 41.0,
-    "early_stopping_patience": 20
+    "early_stopping_patience": 300
 }

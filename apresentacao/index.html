@@ -1178,11 +1178,47 @@
   </div>
 </section>
 
-<!-- 05 · Protótipo -->
+<!-- 05 · Três arquiteturas -->
+<section class="slide dark" data-slide-id="three-architectures">
+  <div class="chrome">
+    <div>Solução · Modelos propostos</div>
+    <div>05 / 12</div>
+  </div>
+  <div class="frame" style="padding-top:3vh">
+    <div class="kicker" data-anim>Mesmo esqueleto, três apostas</div>
+    <h2 class="h-xl h-xl-en" style="font-size:min(4.8vw,8.5vh); margin-bottom:4vh" data-anim>Três arquiteturas leves</h2>
+    <div class="grid-3" style="flex:0 0 auto; align-content:start; gap:3vw">
+      <div class="pillar" data-anim style="padding-left:1.6vw; border-left:3px solid currentColor; opacity:.7">
+        <div class="kicker" style="margin-bottom:0">Throughput máximo</div>
+        <div class="t h-hero-en">ShuffleVSR</div>
+        <div class="d">Sem alinhamento: concatena quadros e funde com Conv 1×1. Refinamento com ShuffleBlocks, 48 canais.</div>
+      </div>
+      <div class="pillar" data-anim style="padding-left:1.6vw; border-left:3px solid currentColor; opacity:.7">
+        <div class="kicker" style="margin-bottom:0">Modelagem temporal máxima</div>
+        <div class="t h-hero-en">PyramidVSR</div>
+        <div class="d">Convolução deformável piramidal em 3 escalas + ConvGRU. Cinco blocos residuais com SE-attention.</div>
+      </div>
+      <div class="pillar" data-anim style="padding-left:1.6vw; border-left:3px solid var(--accent)">
+        <div class="kicker" style="margin-bottom:0; color:var(--accent-ink); opacity:1">Equilíbrio</div>
+        <div class="t h-hero-en">RTDVSR</div>
+        <div class="d">Convolução deformável em escala única + ConvGRU. Quatro blocos residuais com SE-attention.</div>
+      </div>
+    </div>
+    <p class="body-zh" style="margin-top:5vh; max-width:70vw" data-anim>
+      Todos são estritamente causais, extraem features no espaço LR e reconstroem por PixelShuffle com skip bicúbico. Só muda o alinhamento e a densidade do refinamento.
+    </p>
+  </div>
+  <div class="foot">
+    <div>Seção 4.3 · Quadro 3</div>
+    <div>Modelos</div>
+  </div>
+</section>
+
+<!-- 06 · Protótipo -->
 <section class="slide light" data-slide-id="prototype" data-animate="pipeline">
   <div class="chrome">
     <div>Solução · Arquitetura do protótipo</div>
-    <div>05 / 12</div>
+    <div>06 / 12</div>
   </div>
   <div class="frame" style="padding-top:3vh">
     <div class="kicker">Dois módulos, uma ponte em ONNX</div>
@@ -1241,42 +1277,6 @@
   <div class="foot">
     <div>Seção 4.2 · Arquitetura</div>
     <div>Pipeline</div>
-  </div>
-</section>
-
-<!-- 06 · Três arquiteturas -->
-<section class="slide dark" data-slide-id="three-architectures">
-  <div class="chrome">
-    <div>Solução · Modelos propostos</div>
-    <div>06 / 12</div>
-  </div>
-  <div class="frame" style="padding-top:3vh">
-    <div class="kicker" data-anim>Mesmo esqueleto, três apostas</div>
-    <h2 class="h-xl h-xl-en" style="font-size:min(4.8vw,8.5vh); margin-bottom:4vh" data-anim>Três arquiteturas leves</h2>
-    <div class="grid-3" style="flex:0 0 auto; align-content:start; gap:3vw">
-      <div class="pillar" data-anim style="padding-left:1.6vw; border-left:3px solid currentColor; opacity:.7">
-        <div class="kicker" style="margin-bottom:0">Throughput máximo</div>
-        <div class="t h-hero-en">ShuffleVSR</div>
-        <div class="d">Sem alinhamento: concatena quadros e funde com Conv 1×1. Refinamento com ShuffleBlocks, 48 canais.</div>
-      </div>
-      <div class="pillar" data-anim style="padding-left:1.6vw; border-left:3px solid currentColor; opacity:.7">
-        <div class="kicker" style="margin-bottom:0">Modelagem temporal máxima</div>
-        <div class="t h-hero-en">PyramidVSR</div>
-        <div class="d">Convolução deformável piramidal em 3 escalas + ConvGRU. Cinco blocos residuais com SE-attention.</div>
-      </div>
-      <div class="pillar" data-anim style="padding-left:1.6vw; border-left:3px solid var(--accent)">
-        <div class="kicker" style="margin-bottom:0; color:var(--accent-ink); opacity:1">Equilíbrio</div>
-        <div class="t h-hero-en">RTDVSR</div>
-        <div class="d">Convolução deformável em escala única + ConvGRU. Quatro blocos residuais com SE-attention.</div>
-      </div>
-    </div>
-    <p class="body-zh" style="margin-top:5vh; max-width:70vw" data-anim>
-      Todos são estritamente causais, extraem features no espaço LR e reconstroem por PixelShuffle com skip bicúbico. Só muda o alinhamento e a densidade do refinamento.
-    </p>
-  </div>
-  <div class="foot">
-    <div>Seção 4.3 · Quadro 3</div>
-    <div>Modelos</div>
   </div>
 </section>
 

@@ -1139,9 +1139,27 @@
   <div class="foot"><div>RTDVSR · Real-Time Deformable Video Super-Resolution</div><div>Solução</div></div>
 </section>
 
-<!-- 05 · Arquitetura do protótipo -->
+<!-- 05 · Justificativa -->
+<section class="slide dark" data-slide-id="justification">
+  <div class="chrome"><div>Justificativa</div><div>05 / 13</div></div>
+  <div class="frame" style="display:grid; gap:4vh; align-content:center; min-height:76vh">
+    <div class="kicker" data-anim>Impacto prático e custo-benefício</div>
+    <h2 class="h-xl h-xl-en" style="font-size:min(5.1vw,9vh)" data-anim>Tempo real já cabe<br>no hardware doméstico.</h2>
+    <div class="grid-2-6-6" style="gap:5vw; margin-top:1vh">
+      <div class="callout" data-anim><b>Viabilidade acessível.</b><br>O protótipo comprova VSR interativa em uma RTX 3060 Ti com 8 GB de VRAM, sem supercomputadores ou <i>datacenters</i>.</div>
+      <div class="callout" data-anim><b>Ponto de Pareto.</b><br>O alinhamento em escala única do RTDVSR preserva o tempo real; a multiescala oferece ganho marginal de qualidade por custo elevado de latência.</div>
+    </div>
+    <div class="grid-2-6-6" style="margin-top:1vh; gap:4vw">
+      <div class="stat-card" data-anim><div class="stat-label">Ganho do PyramidVSR</div><div class="stat-nb">+0,17 <span class="stat-unit">dB</span></div><div class="stat-note">sobre o RTDVSR</div></div>
+      <div class="stat-card" data-anim><div class="stat-label">Custo adicional</div><div class="stat-nb">+39<span class="stat-unit">%</span></div><div class="stat-note">de latência para esse ganho marginal</div></div>
+    </div>
+  </div>
+  <div class="foot"><div>Curva de Pareto · qualidade × latência × viabilidade</div><div>Relevância</div></div>
+</section>
+
+<!-- 06 · Arquitetura do protótipo -->
 <section class="slide light" data-slide-id="prototype" data-animate="pipeline">
-  <div class="chrome"><div>Solução · Arquitetura do protótipo</div><div>05 / 13</div></div>
+  <div class="chrome"><div>Solução · Arquitetura do protótipo</div><div>06 / 13</div></div>
   <div class="frame" style="padding-top:3vh">
     <div class="kicker">Dois módulos, uma ponte em ONNX</div>
     <h2 class="h-xl h-xl-en" style="font-size:min(4.8vw,8.5vh)">Treinar em Python, rodar em C++</h2>
@@ -1165,24 +1183,6 @@
     </div>
   </div>
   <div class="foot"><div>Seção 4.2 · Arquitetura</div><div>Pipeline</div></div>
-</section>
-
-<!-- 06 · Justificativa -->
-<section class="slide dark" data-slide-id="justification">
-  <div class="chrome"><div>Justificativa</div><div>06 / 13</div></div>
-  <div class="frame" style="display:grid; gap:4vh; align-content:center; min-height:76vh">
-    <div class="kicker" data-anim>Impacto prático e custo-benefício</div>
-    <h2 class="h-xl h-xl-en" style="font-size:min(5.1vw,9vh)" data-anim>Tempo real já cabe<br>no hardware doméstico.</h2>
-    <div class="grid-2-6-6" style="gap:5vw; margin-top:1vh">
-      <div class="callout" data-anim><b>Viabilidade acessível.</b><br>O protótipo comprova VSR interativa em uma RTX 3060 Ti com 8 GB de VRAM, sem supercomputadores ou <i>datacenters</i>.</div>
-      <div class="callout" data-anim><b>Ponto de Pareto.</b><br>O alinhamento em escala única do RTDVSR preserva o tempo real; a multiescala oferece ganho marginal de qualidade por custo elevado de latência.</div>
-    </div>
-    <div class="grid-2-6-6" style="margin-top:1vh; gap:4vw">
-      <div class="stat-card" data-anim><div class="stat-label">Ganho do PyramidVSR</div><div class="stat-nb">+0,17 <span class="stat-unit">dB</span></div><div class="stat-note">sobre o RTDVSR</div></div>
-      <div class="stat-card" data-anim><div class="stat-label">Custo adicional</div><div class="stat-nb">+39<span class="stat-unit">%</span></div><div class="stat-note">de latência para esse ganho marginal</div></div>
-    </div>
-  </div>
-  <div class="foot"><div>Curva de Pareto · qualidade × latência × viabilidade</div><div>Relevância</div></div>
 </section>
 
 <!-- 07 · Três arquiteturas -->
@@ -1460,15 +1460,15 @@ const SPEAKER_NOTES = [
     purpose:'Resumir o protótipo e antecipar a evidência de que a meta foi alcançada',
     talk:['Separamos a iteração científica, em Python e PyTorch, da inferência nativa em C++ e TensorRT FP16','Comparamos ShuffleVSR, PyramidVSR e RTDVSR; o RTDVSR foi o modelo que melhor equilibrou os requisitos','Ele é estritamente causal, usa alinhamento deformável em escala única e ConvGRU para fusão temporal recorrente','No Vid4, alcançou 35,22 dB e, de 540p para 1080p, 40,6 ms por quadro: 24,6 FPS, dentro da zona Cinema'],
     transition:'Esse resultado tem valor porque desloca a VSR em tempo real para uma faixa de hardware acessível' },
-  { id:'prototype', title:'Arquitetura do protótipo', section:'Solução', minutes:0.7,
-    purpose:'Detalhar a separação entre pesquisa em Python e inferência nativa em C++',
-    talk:['O módulo de treinamento concentra dados, experimentos, otimização e exportação para ONNX','O módulo de inferência recebe o modelo exportado, compila a engine TensorRT FP16 e executa o vídeo quadro a quadro em C++','Essa separação preserva a agilidade científica no treino e reduz o custo de execução no produto final'],
-    transition:'Com a arquitetura definida, o próximo ponto é explicar a relevância desse equilíbrio para o uso prático',
-    advance:'Cada → acende um passo; depois do 08 vai para o próximo slide' },
   { id:'justification', title:'Justificativa', section:'Abertura', minutes:0.45,
     purpose:'Explicitar a relevância prática e a contribuição de eficiência do trabalho',
     talk:['O trabalho demonstra que VSR interativa não depende de infraestrutura de datacenter: é viável em uma GPU comercial de 8 GB','Também localiza o ponto de Pareto: a multiescala do PyramidVSR entrega apenas 0,17 dB adicional, mas custa 39% mais latência','Por isso, a escala única do RTDVSR é o melhor compromisso prático entre qualidade, estabilidade e velocidade'],
-    transition:'Com esse cenário definido, detalho agora como a solução foi construída e avaliada' },
+    transition:'Com o contexto inicial concluído, detalho agora como a solução foi construída e avaliada' },
+  { id:'prototype', title:'Arquitetura do protótipo', section:'Solução', minutes:0.7,
+    purpose:'Detalhar a separação entre pesquisa em Python e inferência nativa em C++',
+    talk:['O módulo de treinamento concentra dados, experimentos, otimização e exportação para ONNX','O módulo de inferência recebe o modelo exportado, compila a engine TensorRT FP16 e executa o vídeo quadro a quadro em C++','Essa separação preserva a agilidade científica no treino e reduz o custo de execução no produto final'],
+    transition:'Com a arquitetura definida, comparamos as três redes propostas',
+    advance:'Cada → acende um passo; depois do 08 vai para o próximo slide' },
   { id:'three-architectures', title:'Três arquiteturas', section:'Solução', minutes:1.3,
     purpose:'Explicar o desenho experimental das três redes',
     talk:['Mesmo esqueleto de entrada e saída para isolar o efeito do alinhamento','ShuffleVSR testa o extremo da velocidade, sem alinhamento','PyramidVSR testa o extremo temporal, com três escalas','RTDVSR é o meio-termo da hipótese'],

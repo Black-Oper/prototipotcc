@@ -1090,97 +1090,45 @@
 
 <!-- 02 · Contexto -->
 <section class="slide light" data-slide-id="context">
-  <div class="chrome">
-    <div>Contexto</div>
-    <div>02 / 12</div>
-  </div>
+  <div class="chrome"><div>Contexto</div><div>02 / 13</div></div>
   <div class="frame" style="padding-top:3vh">
     <div class="kicker" data-anim>Vídeo de alta resolução, rede limitada</div>
     <h2 class="h-xl h-xl-en" style="font-size:min(5.2vw,9.2vh)" data-anim>Mais definição.<br>O mesmo gargalo.</h2>
-    <p class="lead" style="max-width:66vw; margin-top:2vh" data-anim>
-      Telas Full HD, 4K e 8K elevam a demanda por vídeo de alta resolução, enquanto a transmissão continua limitada por largura de banda.
-    </p>
+    <p class="lead" style="max-width:66vw; margin-top:2vh" data-anim>Telas Full HD, 4K e 8K elevam a demanda por vídeo de alta resolução, enquanto a transmissão continua limitada por largura de banda.</p>
     <div class="grid-3" style="margin-top:2vh">
-      <div class="stat-card" data-anim>
-        <div class="stat-label">Transmissão</div>
-        <div class="stat-nb">LR</div>
-        <div class="stat-note">envia o vídeo em baixa resolução</div>
-      </div>
-      <div class="stat-card" data-anim>
-        <div class="stat-label">No dispositivo</div>
-        <div class="stat-nb">VSR</div>
-        <div class="stat-note">reconstrói detalhes com IA no cliente</div>
-      </div>
-      <div class="stat-card" data-anim>
-        <div class="stat-label">Mesmo QoE</div>
-        <div class="stat-nb">−17,13<span class="stat-unit">%</span></div>
-        <div class="stat-note">de consumo de banda com VSR no cliente</div>
-      </div>
+      <div class="stat-card" data-anim><div class="stat-label">Transmissão</div><div class="stat-nb">LR</div><div class="stat-note">envia o vídeo em baixa resolução</div></div>
+      <div class="stat-card" data-anim><div class="stat-label">No dispositivo</div><div class="stat-nb">VSR</div><div class="stat-note">reconstrói detalhes com IA no cliente</div></div>
+      <div class="stat-card" data-anim><div class="stat-label">Mesmo QoE</div><div class="stat-nb">−17,13<span class="stat-unit">%</span></div><div class="stat-note">de consumo de banda com VSR no cliente</div></div>
     </div>
   </div>
-  <div class="foot">
-    <div>Super-resolução de vídeo no lado do cliente · Yeo et al. (2018)</div>
-    <div>Contexto</div>
-  </div>
+  <div class="foot"><div>Super-resolução de vídeo no lado do cliente · Yeo et al. (2018)</div><div>Contexto</div></div>
 </section>
 
 <!-- 03 · Problema -->
 <section class="slide dark" data-slide-id="problem">
-  <div class="chrome">
-    <div>Problema</div>
-    <div>03 / 12</div>
-  </div>
+  <div class="chrome"><div>Problema</div><div>03 / 13</div></div>
   <div class="frame" style="padding-top:3vh">
     <div class="kicker" data-anim>O tripé de ferro da VSR em tempo real</div>
     <h2 class="h-xl h-xl-en" style="font-size:min(4.8vw,8.5vh)" data-anim>Qualidade, estabilidade<br>e velocidade.</h2>
     <div class="grid-3" style="margin-top:3vh">
-      <div class="pillar" data-anim style="padding-left:1.6vw; border-left:3px solid currentColor">
-        <div class="kicker">Qualidade visual</div>
-        <div class="t h-hero-en">Detalhes</div>
-        <div class="d">Aumentar a nitidez e recuperar informação visual sem degradar a imagem.</div>
-      </div>
-      <div class="pillar" data-anim style="padding-left:1.6vw; border-left:3px solid currentColor">
-        <div class="kicker">Coerência temporal</div>
-        <div class="t h-hero-en">Sem flickering</div>
-        <div class="d">Evitar cintilação e artefatos entre quadros consecutivos.</div>
-      </div>
-      <div class="pillar" data-anim style="padding-left:1.6vw; border-left:3px solid var(--accent)">
-        <div class="kicker" style="color:var(--accent-ink)">Baixa latência</div>
-        <div class="t h-hero-en">≤ 41 ms</div>
-        <div class="d">Limite de 24 FPS para entrar na zona Cinema.</div>
-      </div>
+      <div class="pillar" data-anim style="padding-left:1.6vw; border-left:3px solid currentColor"><div class="kicker">Qualidade visual</div><div class="t h-hero-en">Detalhes</div><div class="d">Aumentar a nitidez e recuperar informação visual sem degradar a imagem.</div></div>
+      <div class="pillar" data-anim style="padding-left:1.6vw; border-left:3px solid currentColor"><div class="kicker">Coerência temporal</div><div class="t h-hero-en">Sem flickering</div><div class="d">Evitar cintilação e artefatos entre quadros consecutivos.</div></div>
+      <div class="pillar" data-anim style="padding-left:1.6vw; border-left:3px solid var(--accent)"><div class="kicker" style="color:var(--accent-ink)">Baixa latência</div><div class="t h-hero-en">≤ 41 ms</div><div class="d">Limite de 24 FPS para entrar na zona Cinema.</div></div>
     </div>
-    <div class="callout" style="margin-top:4vh" data-anim>
-      Modelos de ponta operam <b>offline</b> (80–400 ms por quadro); os leves tendem a processar quadros isolados ou dependem de <i>datacenter</i>.
-      <div class="callout-src">Pergunta de pesquisa · Como conciliar os três requisitos em uma RTX 3060 Ti de 8 GB?</div>
-    </div>
+    <div class="callout" style="margin-top:4vh" data-anim>Modelos de ponta operam <b>offline</b> (80–400 ms por quadro); os leves tendem a processar quadros isolados ou dependem de <i>datacenter</i>.<div class="callout-src">Pergunta de pesquisa · Como conciliar os três requisitos em uma RTX 3060 Ti de 8 GB?</div></div>
   </div>
-  <div class="foot">
-    <div>Qualidade visual × coerência temporal × baixa latência</div>
-    <div>Desafio</div>
-  </div>
+  <div class="foot"><div>Qualidade visual × coerência temporal × baixa latência</div><div>Desafio</div></div>
 </section>
 
 <!-- 04 · Solução -->
 <section class="slide light" data-slide-id="solution">
-  <div class="chrome">
-    <div>Solução proposta</div>
-    <div>04 / 12</div>
-  </div>
+  <div class="chrome"><div>Solução proposta</div><div>04 / 13</div></div>
   <div class="frame" style="padding-top:3vh">
     <div class="kicker" data-anim>Da pesquisa científica à execução nativa</div>
     <h2 class="h-xl h-xl-en" style="font-size:min(4.8vw,8.5vh)" data-anim>RTDVSR: desenhado<br>para o tempo real.</h2>
     <div class="grid-2-6-6" style="margin-top:3vh; gap:4vw">
-      <div class="pillar" data-anim style="padding-left:1.6vw; border-left:3px solid currentColor">
-        <div class="kicker">Dois módulos</div>
-        <div class="t h-hero-en">Python → C++</div>
-        <div class="d">Treinamento em Python/PyTorch; inferência nativa em C++ com TensorRT FP16, eliminando o <i>overhead</i> do Python.</div>
-      </div>
-      <div class="pillar" data-anim style="padding-left:1.6vw; border-left:3px solid var(--accent)">
-        <div class="kicker" style="color:var(--accent-ink)">Modelo final</div>
-        <div class="t h-hero-en">RTDVSR</div>
-        <div class="d">Processamento causal, alinhamento deformável em escala única e fusão temporal recorrente por ConvGRU.</div>
-      </div>
+      <div class="pillar" data-anim style="padding-left:1.6vw; border-left:3px solid currentColor"><div class="kicker">Dois módulos</div><div class="t h-hero-en">Python → C++</div><div class="d">Treinamento em Python/PyTorch; inferência nativa em C++ com TensorRT FP16, eliminando o <i>overhead</i> do Python.</div></div>
+      <div class="pillar" data-anim style="padding-left:1.6vw; border-left:3px solid var(--accent)"><div class="kicker" style="color:var(--accent-ink)">Modelo final</div><div class="t h-hero-en">RTDVSR</div><div class="d">Processamento causal, alinhamento deformável em escala única e fusão temporal recorrente por ConvGRU.</div></div>
     </div>
     <div class="grid-3" style="margin-top:4vh">
       <div class="stat-card" data-anim><div class="stat-label">Arquiteturas avaliadas</div><div class="stat-nb">3</div><div class="stat-note">ShuffleVSR · PyramidVSR · RTDVSR</div></div>
@@ -1188,24 +1136,60 @@
       <div class="stat-card" data-anim><div class="stat-label">Desempenho 540p → 1080p</div><div class="stat-nb">40,6 <span class="stat-unit">ms</span></div><div class="stat-note">24,6 FPS · zona Cinema</div></div>
     </div>
   </div>
-  <div class="foot">
-    <div>RTDVSR · Real-Time Deformable Video Super-Resolution</div>
-    <div>Solução</div>
-  </div>
+  <div class="foot"><div>RTDVSR · Real-Time Deformable Video Super-Resolution</div><div>Solução</div></div>
 </section>
 
-<!-- 05 · Justificativa -->
-<section class="slide dark" data-slide-id="justification">
-  <div class="chrome">
-    <div>Justificativa</div>
-    <div>05 / 13</div>
+<!-- 05 · Arquitetura do protótipo -->
+<section class="slide light" data-slide-id="prototype" data-animate="pipeline">
+  <div class="chrome"><div>Solução · Arquitetura do protótipo</div><div>05 / 13</div></div>
+  <div class="frame" style="padding-top:3vh">
+    <div class="kicker">Dois módulos, uma ponte em ONNX</div>
+    <h2 class="h-xl h-xl-en" style="font-size:min(4.8vw,8.5vh)">Treinar em Python, rodar em C++</h2>
+    <div class="pipeline-section">
+      <div class="pipeline-label">Módulo de treinamento · Python / PyTorch</div>
+      <div class="pipeline" data-cols="4">
+        <div class="step" data-anim="step"><div class="step-nb">01</div><div class="step-title">Dados</div><div class="step-desc">Vimeo-90K Septuplet, escala 2×</div></div>
+        <div class="step" data-anim="step"><div class="step-nb">02</div><div class="step-title">Treino</div><div class="step-desc">Três arquiteturas, mesmo protocolo</div></div>
+        <div class="step" data-anim="step"><div class="step-nb">03</div><div class="step-title">Otimização</div><div class="step-desc">Optuna com TPE e poda por mediana</div></div>
+        <div class="step" data-anim="step"><div class="step-nb">04</div><div class="step-title">Exportar</div><div class="step-desc">ONNX opset 19 com DeformConv</div></div>
+      </div>
+    </div>
+    <div class="pipeline-section">
+      <div class="pipeline-label">Módulo de inferência · C++ / TensorRT / Qt Quick</div>
+      <div class="pipeline" data-cols="4">
+        <div class="step" data-anim="step"><div class="step-nb">05</div><div class="step-title">Engine</div><div class="step-desc">TensorRT FP16 compilada e mantida em cache</div></div>
+        <div class="step" data-anim="step"><div class="step-nb">06</div><div class="step-title">Leitura</div><div class="step-desc">Vídeo local, quadro a quadro</div></div>
+        <div class="step" data-anim="step"><div class="step-nb">07</div><div class="step-title">Inferência</div><div class="step-desc">960×540 → 1920×1080</div></div>
+        <div class="step" data-anim="step"><div class="step-nb">08</div><div class="step-title">Comparação</div><div class="step-desc">Divisor arrastável original × SR</div></div>
+      </div>
+    </div>
   </div>
+  <div class="foot"><div>Seção 4.2 · Arquitetura</div><div>Pipeline</div></div>
+</section>
 
-<!-- 06 · Três arquiteturas -->
+<!-- 06 · Justificativa -->
+<section class="slide dark" data-slide-id="justification">
+  <div class="chrome"><div>Justificativa</div><div>06 / 13</div></div>
+  <div class="frame" style="display:grid; gap:4vh; align-content:center; min-height:76vh">
+    <div class="kicker" data-anim>Impacto prático e custo-benefício</div>
+    <h2 class="h-xl h-xl-en" style="font-size:min(5.1vw,9vh)" data-anim>Tempo real já cabe<br>no hardware doméstico.</h2>
+    <div class="grid-2-6-6" style="gap:5vw; margin-top:1vh">
+      <div class="callout" data-anim><b>Viabilidade acessível.</b><br>O protótipo comprova VSR interativa em uma RTX 3060 Ti com 8 GB de VRAM, sem supercomputadores ou <i>datacenters</i>.</div>
+      <div class="callout" data-anim><b>Ponto de Pareto.</b><br>O alinhamento em escala única do RTDVSR preserva o tempo real; a multiescala oferece ganho marginal de qualidade por custo elevado de latência.</div>
+    </div>
+    <div class="grid-2-6-6" style="margin-top:1vh; gap:4vw">
+      <div class="stat-card" data-anim><div class="stat-label">Ganho do PyramidVSR</div><div class="stat-nb">+0,17 <span class="stat-unit">dB</span></div><div class="stat-note">sobre o RTDVSR</div></div>
+      <div class="stat-card" data-anim><div class="stat-label">Custo adicional</div><div class="stat-nb">+39<span class="stat-unit">%</span></div><div class="stat-note">de latência para esse ganho marginal</div></div>
+    </div>
+  </div>
+  <div class="foot"><div>Curva de Pareto · qualidade × latência × viabilidade</div><div>Relevância</div></div>
+</section>
+
+<!-- 07 · Três arquiteturas -->
 <section class="slide dark" data-slide-id="three-architectures">
   <div class="chrome">
     <div>Solução · Modelos propostos</div>
-    <div>06 / 13</div>
+    <div>07 / 13</div>
   </div>
   <div class="frame" style="padding-top:3vh">
     <div class="kicker" data-anim>Mesmo esqueleto, três apostas</div>
@@ -1234,34 +1218,6 @@
   <div class="foot">
     <div>Seção 4.3 · Quadro 3</div>
     <div>Modelos</div>
-  </div>
-</section>
-
-<!-- 07 · Protótipo -->
-<section class="slide light" data-slide-id="prototype" data-animate="pipeline">
-  <div class="chrome">
-    <div>Solução · Arquitetura do protótipo</div>
-    <div>07 / 13</div>
-  </div>
-  <div class="frame" style="display:grid; gap:4vh; align-content:center; min-height:76vh">
-    <div class="kicker" data-anim>Impacto prático e custo-benefício</div>
-    <h2 class="h-xl h-xl-en" style="font-size:min(5.1vw,9vh)" data-anim>Tempo real já cabe<br>no hardware doméstico.</h2>
-    <div class="grid-2-6-6" style="gap:5vw; margin-top:1vh">
-      <div class="callout" data-anim>
-        <b>Viabilidade acessível.</b><br>O protótipo comprova VSR interativa em uma RTX 3060 Ti com 8 GB de VRAM, sem supercomputadores ou <i>datacenters</i>.
-      </div>
-      <div class="callout" data-anim>
-        <b>Ponto de Pareto.</b><br>O alinhamento em escala única do RTDVSR preserva o tempo real; a multiescala oferece ganho marginal de qualidade por custo elevado de latência.
-      </div>
-    </div>
-    <div class="grid-2-6-6" style="margin-top:1vh; gap:4vw">
-      <div class="stat-card" data-anim><div class="stat-label">Ganho do PyramidVSR</div><div class="stat-nb">+0,17 <span class="stat-unit">dB</span></div><div class="stat-note">sobre o RTDVSR</div></div>
-      <div class="stat-card" data-anim><div class="stat-label">Custo adicional</div><div class="stat-nb">+39<span class="stat-unit">%</span></div><div class="stat-note">de latência para esse ganho marginal</div></div>
-    </div>
-  </div>
-  <div class="foot">
-    <div>Curva de Pareto · qualidade × latência × viabilidade</div>
-    <div>Relevância</div>
   </div>
 </section>
 
@@ -1504,6 +1460,11 @@ const SPEAKER_NOTES = [
     purpose:'Resumir o protótipo e antecipar a evidência de que a meta foi alcançada',
     talk:['Separamos a iteração científica, em Python e PyTorch, da inferência nativa em C++ e TensorRT FP16','Comparamos ShuffleVSR, PyramidVSR e RTDVSR; o RTDVSR foi o modelo que melhor equilibrou os requisitos','Ele é estritamente causal, usa alinhamento deformável em escala única e ConvGRU para fusão temporal recorrente','No Vid4, alcançou 35,22 dB e, de 540p para 1080p, 40,6 ms por quadro: 24,6 FPS, dentro da zona Cinema'],
     transition:'Esse resultado tem valor porque desloca a VSR em tempo real para uma faixa de hardware acessível' },
+  { id:'prototype', title:'Arquitetura do protótipo', section:'Solução', minutes:0.7,
+    purpose:'Detalhar a separação entre pesquisa em Python e inferência nativa em C++',
+    talk:['O módulo de treinamento concentra dados, experimentos, otimização e exportação para ONNX','O módulo de inferência recebe o modelo exportado, compila a engine TensorRT FP16 e executa o vídeo quadro a quadro em C++','Essa separação preserva a agilidade científica no treino e reduz o custo de execução no produto final'],
+    transition:'Com a arquitetura definida, o próximo ponto é explicar a relevância desse equilíbrio para o uso prático',
+    advance:'Cada → acende um passo; depois do 08 vai para o próximo slide' },
   { id:'justification', title:'Justificativa', section:'Abertura', minutes:0.45,
     purpose:'Explicitar a relevância prática e a contribuição de eficiência do trabalho',
     talk:['O trabalho demonstra que VSR interativa não depende de infraestrutura de datacenter: é viável em uma GPU comercial de 8 GB','Também localiza o ponto de Pareto: a multiescala do PyramidVSR entrega apenas 0,17 dB adicional, mas custa 39% mais latência','Por isso, a escala única do RTDVSR é o melhor compromisso prático entre qualidade, estabilidade e velocidade'],

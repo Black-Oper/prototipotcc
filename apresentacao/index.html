@@ -1198,35 +1198,14 @@
 <section class="slide dark" data-slide-id="justification">
   <div class="chrome">
     <div>Justificativa</div>
-    <div>05 / 12</div>
+    <div>05 / 13</div>
   </div>
-  <div class="frame" style="display:grid; gap:4vh; align-content:center; min-height:76vh">
-    <div class="kicker" data-anim>Impacto prático e custo-benefício</div>
-    <h2 class="h-xl h-xl-en" style="font-size:min(5.1vw,9vh)" data-anim>Tempo real já cabe<br>no hardware doméstico.</h2>
-    <div class="grid-2-6-6" style="gap:5vw; margin-top:1vh">
-      <div class="callout" data-anim>
-        <b>Viabilidade acessível.</b><br>O protótipo comprova VSR interativa em uma RTX 3060 Ti com 8 GB de VRAM, sem supercomputadores ou <i>datacenters</i>.
-      </div>
-      <div class="callout" data-anim>
-        <b>Ponto de Pareto.</b><br>O alinhamento em escala única do RTDVSR preserva o tempo real; a multiescala oferece ganho marginal de qualidade por custo elevado de latência.
-      </div>
-    </div>
-    <div class="grid-2-6-6" style="margin-top:1vh; gap:4vw">
-      <div class="stat-card" data-anim><div class="stat-label">Ganho do PyramidVSR</div><div class="stat-nb">+0,17 <span class="stat-unit">dB</span></div><div class="stat-note">sobre o RTDVSR</div></div>
-      <div class="stat-card" data-anim><div class="stat-label">Custo adicional</div><div class="stat-nb">+39<span class="stat-unit">%</span></div><div class="stat-note">de latência para esse ganho marginal</div></div>
-    </div>
-  </div>
-  <div class="foot">
-    <div>Curva de Pareto · qualidade × latência × viabilidade</div>
-    <div>Relevância</div>
-  </div>
-</section>
 
 <!-- 06 · Três arquiteturas -->
 <section class="slide dark" data-slide-id="three-architectures">
   <div class="chrome">
     <div>Solução · Modelos propostos</div>
-    <div>06 / 12</div>
+    <div>06 / 13</div>
   </div>
   <div class="frame" style="padding-top:3vh">
     <div class="kicker" data-anim>Mesmo esqueleto, três apostas</div>
@@ -1258,11 +1237,39 @@
   </div>
 </section>
 
-<!-- 07 · RTDVSR -->
+<!-- 07 · Protótipo -->
+<section class="slide light" data-slide-id="prototype" data-animate="pipeline">
+  <div class="chrome">
+    <div>Solução · Arquitetura do protótipo</div>
+    <div>07 / 13</div>
+  </div>
+  <div class="frame" style="display:grid; gap:4vh; align-content:center; min-height:76vh">
+    <div class="kicker" data-anim>Impacto prático e custo-benefício</div>
+    <h2 class="h-xl h-xl-en" style="font-size:min(5.1vw,9vh)" data-anim>Tempo real já cabe<br>no hardware doméstico.</h2>
+    <div class="grid-2-6-6" style="gap:5vw; margin-top:1vh">
+      <div class="callout" data-anim>
+        <b>Viabilidade acessível.</b><br>O protótipo comprova VSR interativa em uma RTX 3060 Ti com 8 GB de VRAM, sem supercomputadores ou <i>datacenters</i>.
+      </div>
+      <div class="callout" data-anim>
+        <b>Ponto de Pareto.</b><br>O alinhamento em escala única do RTDVSR preserva o tempo real; a multiescala oferece ganho marginal de qualidade por custo elevado de latência.
+      </div>
+    </div>
+    <div class="grid-2-6-6" style="margin-top:1vh; gap:4vw">
+      <div class="stat-card" data-anim><div class="stat-label">Ganho do PyramidVSR</div><div class="stat-nb">+0,17 <span class="stat-unit">dB</span></div><div class="stat-note">sobre o RTDVSR</div></div>
+      <div class="stat-card" data-anim><div class="stat-label">Custo adicional</div><div class="stat-nb">+39<span class="stat-unit">%</span></div><div class="stat-note">de latência para esse ganho marginal</div></div>
+    </div>
+  </div>
+  <div class="foot">
+    <div>Curva de Pareto · qualidade × latência × viabilidade</div>
+    <div>Relevância</div>
+  </div>
+</section>
+
+<!-- 08 · RTDVSR -->
 <section class="slide light" data-slide-id="rtdvsr-design">
   <div class="chrome">
     <div>Solução · Modelo escolhido</div>
-    <div>07 / 12</div>
+    <div>08 / 13</div>
   </div>
   <div class="frame grid-2-8-4" style="padding-top:3vh">
     <div>
@@ -1295,11 +1302,11 @@
   </div>
 </section>
 
-<!-- 08 · Resultados preliminares -->
+<!-- 09 · Resultados preliminares -->
 <section class="slide dark" data-slide-id="preliminary-results">
   <div class="chrome">
     <div>Resultados · Comparação entre arquiteturas</div>
-    <div>08 / 12</div>
+    <div>09 / 13</div>
   </div>
   <div class="frame" style="padding-top:3vh">
     <div class="kicker" data-anim>Vid4 · escala 2× · PyTorch FP32</div>
@@ -1332,11 +1339,11 @@
   </div>
 </section>
 
-<!-- 09 · Modelo final -->
+<!-- 10 · Modelo final -->
 <section class="slide light" data-slide-id="final-model">
   <div class="chrome">
     <div>Resultados · Modelo final</div>
-    <div>09 / 12</div>
+    <div>10 / 13</div>
   </div>
   <div class="frame" style="padding-top:3vh">
     <div class="kicker" data-anim>Optuna + 138 épocas + TensorRT FP16</div>
@@ -1381,11 +1388,11 @@
   </div>
 </section>
 
-<!-- 10 · Qualitativo e protótipo -->
+<!-- 11 · Qualitativo e protótipo -->
 <section class="slide dark" data-slide-id="qualitative">
   <div class="chrome">
     <div>Resultados · Análise qualitativa</div>
-    <div>10 / 12</div>
+    <div>11 / 13</div>
   </div>
   <div class="frame" style="padding-top:2vh">
     <div class="kicker" data-anim>Ver para crer</div>
@@ -1412,11 +1419,11 @@
   </div>
 </section>
 
-<!-- 11 · Limitações e futuro -->
+<!-- 12 · Limitações e futuro -->
 <section class="slide light" data-slide-id="limits-future" data-animate="directional">
   <div class="chrome">
     <div>Discussão · Limites e próximos passos</div>
-    <div>11 / 12</div>
+    <div>12 / 13</div>
   </div>
   <div class="frame" style="padding-top:3vh">
     <div class="kicker" data-anim>Honestidade experimental</div>
@@ -1448,11 +1455,11 @@
   </div>
 </section>
 
-<!-- 12 · Conclusão -->
+<!-- 13 · Conclusão -->
 <section class="slide hero dark" data-slide-id="closing" data-animate="quote">
   <div class="chrome">
     <div>Conclusão</div>
-    <div>12 / 12</div>
+    <div>13 / 13</div>
   </div>
   <div class="frame" style="display:grid; gap:5vh; align-content:center; min-height:76vh">
     <div class="kicker" data-anim>Hipótese confirmada · todos os objetivos atendidos</div>

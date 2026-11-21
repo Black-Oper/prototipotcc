@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="pt-BR" data-family="magazine" data-medium="slide" data-theme="indigo-porcelain">
+<html lang="pt-BR" data-family="magazine" data-medium="slide" data-theme="vice-city">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -78,6 +78,37 @@
   --accent-on-text:#f1efea;
   --accent-on-text-rgb:241,239,234;
   color-scheme:light;
+}
+[data-theme="vice-city"]{
+  --paper:#fff1e0;
+  --paper-2:#ffe0c2;
+  --ink:#1a0933;
+  --muted:#c9a6c8;
+  --accent:#00a859;
+  --accent-soft:#4a1d5c;
+  --accent-on:#ffffff;
+  --accent-ink:#ff2e88;
+  --accent-display:#ff2e88;
+  --accent-ink-inverse:#ff7eb6;
+  --text-primary:#fff1e0;
+  --text-body:#ffe6d0;
+  --text-secondary:#f5cbbd;
+  --text-helper:#c9a6c8;
+  --line-strong:#a4609a;
+  --line:#5e2d6e;
+  --line-subtle:#3d1a55;
+  --ink-rgb:26,9,51;
+  --paper-rgb:255,241,224;
+  --accent-rgb:0,168,89;
+  --accent-on-rgb:255,255,255;
+  --accent-on-text:#ffffff;
+  --accent-on-text-rgb:255,255,255;
+  --vc-pink:#ff2e88;
+  --vc-orange:#ff8a3d;
+  --vc-gold:#ffc857;
+  --vc-teal:#2ee6d6;
+  --verdao:#00a859;
+  color-scheme:dark;
 }
 [data-theme="ink-classic"]{
   --paper:#f1efea;
@@ -543,6 +574,13 @@
 
 @media (prefers-reduced-motion: reduce) { .gz-effect { animation: none } }
 
+
+/* Tema GTA VI / Vice City × Palmeiras: detalhes em verde alviverde e neon */
+[data-theme="vice-city"] .kicker{color:var(--vc-teal)}
+[data-theme="vice-city"] .slide.dark .stat-card{border-top:3px solid var(--verdao)}
+[data-theme="vice-city"] .slide.dark .hi::after{background:rgba(0,168,89,.35)}
+[data-theme="vice-city"] .slide.dark em{text-shadow:0 0 .6em rgba(255,46,136,.45)}
+[data-theme="vice-city"] #nav .dot.active{background:var(--vc-pink)}
 /* 旧变量名别名（迁移期保留） */
 :root{--mono:var(--font-mono);--serif-en:var(--font-display);--serif-body-en:var(--font-serif);--serif-zh:var(--font-serif-zh);--sans-zh:var(--font-sans);--paper-tint:var(--paper-2);--ink-tint:var(--text-body);--nav-safe-bottom:var(--canvas-safe-bottom)}
 /* 模板自己的反色块 → 设计系统反色表面 */
@@ -1840,15 +1878,17 @@ window.__SPEAKER_NOTES__ = SPEAKER_NOTES;
 
   var SHADERS = {
     // 原 PPT template.html FS_DARK，颜色是设计时定死的钛金暗色（themes.md 注明不跟主题）
+    // Vice City: céu de pôr do sol (violeta -> magenta -> laranja) com sol e brilho verde Palmeiras
     dispersion: HEAD +
-      'vec3 pal(float t,vec3 a,vec3 b,vec3 c,vec3 d){return a+b*cos(6.28318*(c*t+d));}' +
       'void main(){vec2 uv=gl_FragCoord.xy/R;vec2 p=uv*2.-1.;p.x*=R.x/R.y;vec2 m=M*2.-1.;m.x*=R.x/R.y;' +
-      'float md=length(p-m);p+=sin(md*15.-T*4.)*exp(-md*3.)*.08;vec2 p0=p;' +
-      'for(float i=1.;i<4.;i++){p.x+=.1/i*sin(i*3.*p.y+T*.4)+.05;p.y+=.1/i*cos(i*2.*p.x+T*.3)-.05;}' +
-      'float r=length(p);float ang=atan(p.y,p.x);' +
-      'vec3 col=pal(r*1.5+p0.x*.5+T*.1,vec3(.12,.12,.13),vec3(.03,.04,.05),vec3(1.),vec3(.1,.2,.4));' +
-      'float disp=sin(r*25.-T*1.5+ang*2.)*.5+.5;col+=vec3(disp*.015,disp*.01,disp*.02);' +
-      'col+=pow(sin(p.x*4.+p.y*3.+T)*.5+.5,8.)*.08;col=mix(vec3(.05,.05,.06),col,.85);gl_FragColor=vec4(col,1.);}',
+      'float md=length(p-m);p+=sin(md*15.-T*4.)*exp(-md*3.)*.05;' +
+      'float y=uv.y+.04*sin(p.x*2.+T*.3);' +
+      'vec3 top=vec3(.10,.03,.22);vec3 mid=vec3(.55,.08,.45);vec3 low=vec3(1.,.38,.30);vec3 hor=vec3(1.,.72,.30);' +
+      'vec3 col=mix(hor,low,smoothstep(.0,.25,y));col=mix(col,mid,smoothstep(.2,.55,y));col=mix(col,top,smoothstep(.5,1.,y));' +
+      'vec2 sp=vec2(p.x*.9,p.y+.55);float sun=smoothstep(.62,.58,length(sp));float band=step(.5,fract(sp.y*9.+T*.05));' +
+      'col=mix(col,vec3(1.,.62,.22),sun*(.35+.25*band));' +
+      'float glow=exp(-length(vec2(p.x*.5,uv.y*1.4))*1.6);col+=vec3(.0,.55,.28)*glow*.10*(.6+.4*sin(T*.5));' +
+      'col*=.55;gl_FragColor=vec4(col,1.);}',
 
     // 原 FS_LIGHT。colors:"theme" 时用主题纸色替换银白，深浅关系不变
     vortex: HEAD + NOISE +
